@@ -1,0 +1,58 @@
+{
+  "name": "dsh-plugin-bt-search",
+  "version": "1.1.0",
+  "description": "BT / magnet search panel for the DeepSeek Harness sidebar, backed by the Anime Garden index.",
+  "type": "module",
+  "license": "MIT",
+  "author": "13711018663",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "bt",
+    "torrent",
+    "magnet",
+    "anime",
+    "animegarden",
+    "动漫花园",
+    "磁力链接"
+  ],
+  "homepage": "https://github.com/13711018663/DeepSeek-Harness-BT-#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/13711018663/DeepSeek-Harness-BT-.git"
+  },
+  "bugs": {
+    "url": "https://github.com/13711018663/DeepSeek-Harness-BT-/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
