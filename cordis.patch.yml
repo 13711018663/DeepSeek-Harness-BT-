@@ -1,0 +1,8 @@
+# BT / magnet search panel for DeepSeek Harness.
+#
+# One Host row puts the sidebar panel in place; the panel itself is the
+# package's `./client` export and runs in the Web page.
+- insert:
+    - id: bt-search
+      name: dsh-plugin-bt-search
+      config: {}
