@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "BT search",
+    "description": "Search BT and magnet resources from the Anime Garden index in the sidebar: broad or precise keyword matching, type filters, sorting, search history and favorites.",
+    "detail": "docs/DETAIL.en.md"
+  }
+}
