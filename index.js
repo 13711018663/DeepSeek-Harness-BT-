@@ -7,7 +7,10 @@
 import { searchAll } from './sources.js';
 
 const ROUTE = '/plugins/dsh-plugin-bt-search/search';
-const MAX_PAGE = 50;
+// 磁力猫实测最多 80 页、12 条/页；首屏默认取 5 页（60 条），可继续加载。
+const MAX_PAGE = 80;
+const DEFAULT_PAGES = 5;
+const MAX_PAGES_PER_REQUEST = 10;
 
 function sendJson(response, status, payload) {
   const body = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -45,6 +48,11 @@ async function handleSearch(ctx, request, response) {
   const params = url.searchParams;
   const rawPage = Number.parseInt(params.get('page') || '1', 10);
   const page = Math.min(MAX_PAGE, Math.max(1, Number.isFinite(rawPage) ? rawPage : 1));
+  const rawPages = Number.parseInt(params.get('pages') || String(DEFAULT_PAGES), 10);
+  const pages = Math.min(
+    MAX_PAGES_PER_REQUEST,
+    Math.max(1, Number.isFinite(rawPages) ? rawPages : DEFAULT_PAGES),
+  );
   const mode = params.get('mode') === 'precise' ? 'precise' : 'broad';
 
   try {
@@ -54,6 +62,7 @@ async function handleSearch(ctx, request, response) {
       type: params.get('type') || '',
       mode,
       page,
+      pages,
     });
     sendJson(response, 200, payload);
   } catch (error) {

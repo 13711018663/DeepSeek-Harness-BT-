@@ -21,7 +21,7 @@ The browser cannot call 磁力猫 directly because the site sends no CORS header
 
 ## Limitations
 
-- 磁力猫 returns 12 items per page; after a type filter only a few may remain.
+- 磁力猫 pages its index at 12 items per page and caps a search at 80 pages (~960 results); the panel fetches 5 pages (60) up front and loads more on demand, so after a type filter only a few may remain.
 - 磁力猫 is a Chinese index, so a pure English keyword often finds nothing.
 - 磁力猫 matches all words (AND), so broad mode sends only the longest word — different from Anime Garden's OR behaviour.
 - The Host half needs one DSH restart after an update; until then the panel falls back to Anime Garden directly and says so.

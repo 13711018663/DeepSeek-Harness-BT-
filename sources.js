@@ -37,6 +37,15 @@ const DATE_RE = /创建时间：\s*(\d{4}-\d{2}-\d{2})/;
 const FORMAT_RE = /文件格式：\s*(\.\w+)/;
 const FILES_RE = /Search_result_type[^>]*>\s*(?:<i[^>]*>\s*<\/i>)?\s*(\d+)/;
 
+// 磁力猫是 12 条/页的服务端分页站点：总数在「找到…相关结果N个」里，
+// 尾页链接实测指向 p=80，即一次搜索最多可翻 80 页 / 960 条。
+const CLM_PAGE_SIZE = 12;
+const CLM_DEFAULT_PAGES = 5;            // 首屏取 5 页 = 60 条
+const CLM_MAX_PAGES_PER_REQUEST = 10;
+const CLM_MAX_PAGE = 80;
+const CLM_PARALLEL = 4;                 // 第 1 页之后的并发数（第 1 页要串行过门）
+const CLM_TOTAL_RE = /相关结果\s*(\d+)\s*个/;
+
 // ---------------------------------------------------------------------------
 // small helpers
 // ---------------------------------------------------------------------------
@@ -268,16 +277,54 @@ async function clmFetch(path) {
   throw new Error('磁力猫镜像均不可用：' + (lastError && lastError.message ? lastError.message : lastError));
 }
 
-export async function searchClm(q, mode = 'broad', page = 1) {
-  const keyword = mode === 'broad' ? broadKeyword(q) : String(q || '').trim();
-  if (!keyword) return [];
-  const word = encodeURIComponent(Buffer.from(keyword, 'utf8').toString('base64'));
-  const { host, html } = await clmFetch(
-    '/search?word=' + word + '&sort=time&p=' + Math.max(1, page),
-  );
+function msgOf(error) {
+  return error && error.message ? error.message : String(error);
+}
+
+// 并发上限 map：第 1 页之后的磁力猫页面并行抓取，避免一页页串行等待。
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      out[index] = await fn(items[index], index);
+    }
+  };
+  const size = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: size }, () => worker()));
+  return out;
+}
+
+function clmTotalOf(html) {
+  const m = CLM_TOTAL_RE.exec(html);
+  return m ? Number(m[1]) : null;
+}
+
+function clmMaxPageOf(html) {
+  const hrefRe = /href="([^"]*?\/search\?[^"]*?)"/g;
+  const pRe = /[?&](?:amp;)?p=(\d+)/g;
+  let max = 0;
+  let href = hrefRe.exec(html);
+  while (href) {
+    pRe.lastIndex = 0;
+    let p = pRe.exec(href[1]);
+    while (p) {
+      const n = Number(p[1]);
+      if (Number.isFinite(n) && n > max) max = n;
+      p = pRe.exec(href[1]);
+    }
+    href = hrefRe.exec(html);
+  }
+  return max ? Math.min(CLM_MAX_PAGE, max) : null;
+}
+
+function parseClmPage(html, host) {
   const results = [];
-  ITEM_RE.lastIndex = 0;
-  let m = ITEM_RE.exec(html);
+  // ITEM_RE 带 /g 且有共享 lastIndex，多页解析时重建实例避免互相干扰。
+  const re = new RegExp(ITEM_RE.source, ITEM_RE.flags);
+  let m = re.exec(html);
   while (m) {
     const id = m[1];
     const title = textOf(m[2]);
@@ -307,18 +354,58 @@ export async function searchClm(q, mode = 'broad', page = 1) {
         format: format ? format[1] : null,
       });
     }
-    m = ITEM_RE.exec(html);
+    m = re.exec(html);
   }
-  return results;
+  return { items: results, total: clmTotalOf(html), maxPage: clmMaxPageOf(html) };
+}
+
+// 返回 { items, total, maxPage, pageErrors }：第 1 页串行（顺带过验证门、拿总数），
+// 其余页最多 4 路并发；单页失败只记 pageErrors，不影响已拿到的结果。
+export async function searchClm(q, mode = 'broad', page = 1, pages = 1) {
+  const keyword = mode === 'broad' ? broadKeyword(q) : String(q || '').trim();
+  if (!keyword) return { items: [], total: null, maxPage: null, pageErrors: [] };
+  const word = encodeURIComponent(Buffer.from(keyword, 'utf8').toString('base64'));
+  const start = Math.max(1, Math.min(CLM_MAX_PAGE, Number(page) || 1));
+  const count = Math.max(1, Math.min(CLM_MAX_PAGES_PER_REQUEST, Number(pages) || 1));
+  const urlOf = (p) => '/search?word=' + word + '&sort=time&p=' + p;
+
+  const head = await clmFetch(urlOf(start));
+  const first = parseClmPage(head.html, head.host);
+
+  let last = start + count - 1;
+  if (first.maxPage) last = Math.min(last, first.maxPage);
+  const wanted = [];
+  for (let p = start + 1; p <= last; p += 1) wanted.push(p);
+
+  const pageErrors = [];
+  const chunks = [first.items];
+  if (wanted.length) {
+    const got = await mapLimit(wanted, CLM_PARALLEL, async (p) => {
+      try {
+        const res = await clmFetch(urlOf(p));
+        return { p, items: parseClmPage(res.html, res.host).items };
+      } catch (error) {
+        return { p, error };
+      }
+    });
+    for (const entry of got) {
+      if (entry.error) pageErrors.push('第 ' + entry.p + ' 页获取失败：' + msgOf(entry.error));
+      else chunks.push(entry.items);
+    }
+  }
+
+  const items = [];
+  for (const chunk of chunks) items.push(...chunk);
+  return { items, total: first.total, maxPage: first.maxPage, pageErrors };
 }
 
 // ---------------------------------------------------------------------------
 // aggregation
 // ---------------------------------------------------------------------------
 
-function runSource(name, q, type, mode, page) {
+function runSource(name, q, type, mode, page, pages) {
   if (name === 'animes') return searchAnimeGarden(q, type);
-  if (name === 'clm') return searchClm(q, mode, page);
+  if (name === 'clm') return searchClm(q, mode, page, pages);
   throw new Error('未知来源 ' + name);
 }
 
@@ -336,35 +423,55 @@ function dedupe(list) {
   return out;
 }
 
-export async function searchAll({ q, source = 'all', type = '', mode = 'broad', page = 1 }) {
+export async function searchAll({ q, source = 'all', type = '', mode = 'broad', page = 1, pages = CLM_DEFAULT_PAGES }) {
   const keyword = String(q || '').trim().slice(0, 200);
   if (!keyword) {
     return { results: [], errors: [{ source: source || 'all', message: '请输入搜索关键词' }] };
   }
-  const names = source === 'all'
-    ? SOURCE_IDS.slice()
-    : SOURCE_IDS.includes(source) ? [source] : null;
-  if (!names) return { results: [], errors: [{ source, message: '未知来源' }] };
+  // 翻页只对磁力猫有意义：第 2 页起不再重复请求动漫花园（否则同一批结果会再抓一遍）。
+  const pageNo = Math.max(1, Math.min(CLM_MAX_PAGE, Number(page) || 1));
+  const pageCount = Math.max(1, Math.min(CLM_MAX_PAGES_PER_REQUEST, Number(pages) || CLM_DEFAULT_PAGES));
+  let names;
+  if (source === 'all') {
+    names = pageNo > 1 ? ['clm'] : SOURCE_IDS.slice();
+  } else if (SOURCE_IDS.includes(source)) {
+    names = [source];
+  } else {
+    return { results: [], errors: [{ source, message: '未知来源' }] };
+  }
 
-  const cacheKey = [source, keyword, type, mode, page].join('|');
+  const cacheKey = [source, keyword, type, mode, pageNo, pageCount].join('|');
   const hit = cacheGet(cacheKey);
   if (hit) return hit;
 
   const settled = await Promise.allSettled(
-    names.map((name) => runSource(name, keyword, type, mode, page)),
+    names.map((name) => runSource(name, keyword, type, mode, pageNo, pageCount)),
   );
   const results = [];
   const errors = [];
+  let total = null;
+  let maxPage = null;
   settled.forEach((outcome, i) => {
-    if (outcome.status === 'fulfilled') {
-      results.push(...(outcome.value || []));
+    const name = names[i];
+    if (outcome.status === 'rejected') {
+      const reason = outcome.reason;
+      errors.push({
+        source: name,
+        message: reason && reason.message ? reason.message : String(reason),
+      });
       return;
     }
-    const reason = outcome.reason;
-    errors.push({
-      source: names[i],
-      message: reason && reason.message ? reason.message : String(reason),
-    });
+    const value = outcome.value;
+    if (name === 'clm') {
+      results.push(...((value && value.items) || []));
+      total = value && value.total != null ? value.total : null;
+      maxPage = value && value.maxPage != null ? value.maxPage : null;
+      for (const message of (value && value.pageErrors) || []) {
+        errors.push({ source: 'clm', message });
+      }
+      return;
+    }
+    results.push(...(value || []));
   });
 
   let rows = results;
@@ -379,7 +486,10 @@ export async function searchAll({ q, source = 'all', type = '', mode = 'broad', 
     }
   }
 
-  const payload = { results: dedupe(rows), errors };
+  const payload = {
+    results: dedupe(rows), errors, total, maxPage,
+    page: pageNo, pages: pageCount,
+  };
   cachePut(cacheKey, payload);
   return payload;
 }

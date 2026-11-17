@@ -39,7 +39,11 @@ window.__ModuleLoader__.load({
 
     const CACHE = new Map();
     const CACHE_TTL = 60 * 1000;
-    const TIMEOUT_MS = 12000;
+    // 磁力猫首屏要请求 5 页（含可能的验证门），超时要留够余量。
+    const TIMEOUT_MS = 18000;
+    // 磁力猫 12 条/页：首屏 5 页 = 60 条，点「加载更多」再追加 5 页。
+    const PAGES_PER_BATCH = 5;
+    const PAGE_SIZE = 12;
 
     function load(key) {
       try { return JSON.parse(localStorage.getItem(key) || '[]'); }
@@ -102,6 +106,20 @@ window.__ModuleLoader__.load({
       return 't:' + String((r && r.title) || '');
     }
 
+    // 追加「加载更多」结果时按 infohash / id 去重，避免翻页边界重复。
+    function dedupeRows(list) {
+      const seen = new Set();
+      const out = [];
+      for (const row of list) {
+        const hash = row && (row.infoHash || infoHashOf(row.magnet));
+        const key = hash ? String(hash).toLowerCase() : ('t:' + ((row && row.title) || ''));
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+      }
+      return out;
+    }
+
     function mapAnimeGarden(rows) {
       return (rows || []).map((r) => ({
         id: 'animes:' + (r.id == null ? r.title : r.id),
@@ -147,6 +165,11 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = useState('search');
       const [history, setHistory] = useState(() => load('bt-search-history'));
       const [favorites, setFavorites] = useState(() => load('bt-search-favorites'));
+      // 磁力猫分页状态：已取到第几页、站点总数、页码上限
+      const [loadingMore, setLoadingMore] = useState(false);
+      const [clmTotal, setClmTotal] = useState(null);
+      const [clmMaxPage, setClmMaxPage] = useState(null);
+      const [clmNextPage, setClmNextPage] = useState(1);
 
       const reqSeq = useRef(0);
       const ctrlRef = useRef(null);
@@ -179,11 +202,13 @@ window.__ModuleLoader__.load({
         save('bt-search-favorites', updated);
       };
 
-      const fetchHost = async (kw, src, md, signal) => {
+      const fetchHost = async (kw, src, md, page, pages, signal) => {
         // type 不参与请求：类型筛选在前端即时生效，切换筛选不必重新抓取。
         const url = HOST_API + '?q=' + encodeURIComponent(kw)
           + '&source=' + encodeURIComponent(src)
-          + '&mode=' + encodeURIComponent(md);
+          + '&mode=' + encodeURIComponent(md)
+          + '&page=' + (page || 1)
+          + '&pages=' + (pages || PAGES_PER_BATCH);
         const resp = await fetch(url, { signal, headers: { Accept: 'application/json' } });
         let data = null;
         try { data = await resp.json(); } catch (e) { data = null; }
@@ -226,12 +251,20 @@ window.__ModuleLoader__.load({
         setNotice('');
         setTab('search');
         setHasSearched(true);
+        // 新一轮搜索重置磁力猫分页状态
+        setClmTotal(null);
+        setClmMaxPage(null);
+        setClmNextPage(1);
+        setLoadingMore(false);
 
-        const cacheKey = [useMode, useSource, kw].join('|');
+        const cacheKey = [useMode, useSource, kw, 1, PAGES_PER_BATCH].join('|');
         const hit = CACHE.get(cacheKey);
         if (hit && Date.now() - hit.t < CACHE_TTL) {
           setResults(hit.results);
           setNotice(hit.notice || '');
+          setClmTotal(hit.total == null ? null : hit.total);
+          setClmMaxPage(hit.maxPage == null ? null : hit.maxPage);
+          setClmNextPage(hit.nextPage || 1 + PAGES_PER_BATCH);
           return;
         }
 
@@ -253,7 +286,8 @@ window.__ModuleLoader__.load({
           let data = null;
           let fallbackNote = '';
           try {
-            data = await fetchHost(kw, useSource, useMode, ctrl ? ctrl.signal : undefined);
+            data = await fetchHost(kw, useSource, useMode, 1, PAGES_PER_BATCH,
+              ctrl ? ctrl.signal : undefined);
           } catch (hostError) {
             if (hostError && hostError.name === 'AbortError') throw hostError;
             if (useSource === 'clm') throw hostError;
@@ -265,9 +299,18 @@ window.__ModuleLoader__.load({
           if (seq !== reqSeq.current) return;  // 已有更新的请求，丢弃这批结果
 
           const text = buildNotice(fallbackNote, (data.errors || []).filter(Boolean));
-          CACHE.set(cacheKey, { t: Date.now(), results: data.results || [], notice: text });
+          const nextPage = (data.page || 1) + (data.pages || PAGES_PER_BATCH);
+          CACHE.set(cacheKey, {
+            t: Date.now(), results: data.results || [], notice: text,
+            total: data.total == null ? null : data.total,
+            maxPage: data.maxPage == null ? null : data.maxPage,
+            nextPage,
+          });
           setResults(data.results || []);
           setNotice(text);
+          setClmTotal(data.total == null ? null : data.total);
+          setClmMaxPage(data.maxPage == null ? null : data.maxPage);
+          setClmNextPage(nextPage);
         } catch (e) {
           if (seq !== reqSeq.current) return;
           if (e && e.name === 'AbortError') {
@@ -282,6 +325,44 @@ window.__ModuleLoader__.load({
         } finally {
           if (timer) clearTimeout(timer);
           if (seq === reqSeq.current) setLoading(false);
+        }
+      };
+
+      // 「加载更多」：只追加磁力猫的下一页批次，不动已有列表；失败只写提示条。
+      const canLoadMore = (source === 'all' || source === 'clm')
+        && clmTotal != null
+        && !loading && !loadingMore
+        && (clmMaxPage == null || clmNextPage <= clmMaxPage);
+
+      const loadMoreClm = async () => {
+        const kw = query.trim();
+        if (!kw || !canLoadMore) return;
+        if (ctrlRef.current) {
+          try { ctrlRef.current.abort(); } catch (e) { /* 忽略 */ }
+        }
+        const seq = reqSeq.current + 1;
+        reqSeq.current = seq;
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        ctrlRef.current = ctrl;
+        setLoadingMore(true);
+        const wantPage = clmNextPage;
+        try {
+          const data = await fetchHost(kw, 'clm', mode, wantPage, PAGES_PER_BATCH,
+            ctrl ? ctrl.signal : undefined);
+          if (seq !== reqSeq.current) return;
+          if (data.total != null) {
+            setClmTotal(data.total);
+            setClmMaxPage(data.maxPage == null ? null : data.maxPage);
+          }
+          setClmNextPage((data.page || wantPage) + (data.pages || PAGES_PER_BATCH));
+          setResults((prev) => dedupeRows(prev.concat(data.results || [])));
+          if (data.errors && data.errors.length) setNotice(buildNotice('', data.errors));
+        } catch (e) {
+          if (seq === reqSeq.current && e && e.name !== 'AbortError') {
+            setNotice('加载更多失败：' + (e && e.message ? e.message : String(e)));
+          }
+        } finally {
+          if (seq === reqSeq.current) setLoadingMore(false);
         }
       };
 
@@ -301,6 +382,10 @@ window.__ModuleLoader__.load({
         setSort('date');
         setMode('broad');
         setTab('search');
+        setClmTotal(null);
+        setClmMaxPage(null);
+        setClmNextPage(1);
+        setLoadingMore(false);
       };
 
       // 过滤 + 排序
@@ -312,6 +397,18 @@ window.__ModuleLoader__.load({
           if (sort === 'name') return String(a.title || '').localeCompare(String(b.title || ''));
           return timeOf(b.createdAt) - timeOf(a.createdAt);
         });
+
+      // 磁力猫统计行：站点总数与已显示条数（其它来源没有这两个字段就只显示总数）
+      const clmShown = results.filter((r) => r.source === 'clm').length;
+      const clmCap = clmTotal != null
+        ? Math.min(clmTotal, (clmMaxPage == null ? 80 : clmMaxPage) * PAGE_SIZE)
+        : null;
+      const statsText = '共 ' + results.length + ' 条，当前筛选 ' + shown.length + ' 条'
+        + (clmTotal != null
+          ? '；磁力猫匹配 ' + clmTotal + ' 条'
+            + (clmCap != null ? '（站点最多可翻 ' + clmMaxPage + ' 页 / 约 ' + clmCap + ' 条）' : '')
+            + '，已显示 ' + clmShown + ' 条'
+          : '');
 
       const chip = (label, active, onClick, disabled, title) => h('button', {
         onClick,
@@ -476,10 +573,22 @@ window.__ModuleLoader__.load({
           }, '没有找到「' + query + '」相关的资源。可换个关键词、切到「全部」来源，或把搜索方式改成「广泛」。'),
 
           !loading && results.length > 0 && h('div', {},
-            h('div', { style: { fontSize: 12, color: C.muted, marginBottom: 8 } },
-              '共 ' + results.length + ' 条，当前筛选 ' + shown.length + ' 条'),
+            h('div', { style: { fontSize: 12, color: C.muted, marginBottom: 8 } }, statsText),
             shown.map((r, i) => card(r, (r.id || 'idx') + '-' + i)),
-            shown.length === 0 && h('div', { style: { textAlign: 'center', padding: 20, color: C.muted } }, '当前类型筛选下没有结果，可切回「全部」。')
+            shown.length === 0 && h('div', { style: { textAlign: 'center', padding: 20, color: C.muted } }, '当前类型筛选下没有结果，可切回「全部」。'),
+            canLoadMore && h('div', { style: { textAlign: 'center', padding: '10px 0 4px' } },
+              h('button', {
+                onClick: loadMoreClm,
+                disabled: loadingMore,
+                style: {
+                  padding: '8px 18px', borderRadius: 8, fontSize: 13,
+                  border: '1px solid ' + C.borderStrong, background: C.layer, color: C.text,
+                  cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.6 : 1
+                }
+              }, loadingMore
+                ? '加载中…'
+                : '加载更多（磁力猫 +' + (PAGES_PER_BATCH * PAGE_SIZE) + ' 条）')
+            )
           )
         ),
 
