@@ -1,18 +1,29 @@
 # BT search
 
-A BT / magnet resource search panel in the DeepSeek Harness sidebar. It queries the public [Anime Garden](https://animes.garden) index, which aggregates 动漫花园 (dmhy), 蜜柑计划 (Mikan), 萌番组 (Moe) and ANi.
+A BT / magnet resource search panel in the DeepSeek Harness sidebar. It aggregates two sources:
+
+- **磁力猫 / Cilimao** (`cilimao.app` v3.0; `clm17.vip` primary, `clm9.in` mirror) — a Chinese BT index that picks up new releases quickly.
+- **Anime Garden** — aggregates 动漫花园 (dmhy), 蜜柑计划 (Mikan), 萌番组 (Moe) and ANi.
 
 ## Features
 
-- **Search**: type a keyword and press Enter.
+- **Search** across both sources, with a source switch (all / Anime Garden / 磁力猫).
 - **Broad / precise matching**: broad returns a resource when any word matches; precise requires every word to appear in the title.
 - **Type filter**: all / anime / manga / music / TV drama / RAW / batch / tokusatsu / game.
 - **Sorting**: publish time, file size, name.
-- **Result cards**: type, formatted size, publish date, source site and publisher, with "magnet link", "copy magnet" and "detail page" actions.
+- **Result cards**: type, formatted size, publish date, file count, file format, source site and publisher, with "magnet link", "copy magnet" and "detail page" actions.
 - **History and favorites**: the last 20 searches are kept and can be cleared; favorites are de-duplicated by title and stored in the browser.
+- **Back home**: clears the keyword and every filter and returns to the recent-search entry.
+
+## How the data is fetched
+
+The browser cannot call 磁力猫 directly because the site sends no CORS headers, so the plugin's Host half fetches both upstreams inside the DSH process and answers one same-origin read-only route, `/plugins/dsh-plugin-bt-search/search`. The endpoint, the click gate and the info-hash shortcut are documented in [SOURCES.md](SOURCES.md).
 
 ## Limitations
 
-- The panel fetches Anime Garden directly from the browser because that API allows cross-origin requests, so Anime Garden is the only data source. Nyaa, The Pirate Bay and BTDig do not allow cross-origin requests and are blocked by the browser.
-- Magnet links are handed to the system default BitTorrent client; the plugin never downloads files itself.
+- 磁力猫 returns 12 items per page; after a type filter only a few may remain.
+- 磁力猫 is a Chinese index, so a pure English keyword often finds nothing.
+- 磁力猫 matches all words (AND), so broad mode sends only the longest word — different from Anime Garden's OR behaviour.
+- The Host half needs one DSH restart after an update; until then the panel falls back to Anime Garden directly and says so.
+- Magnet links are handed to the system default BitTorrent client; the plugin never downloads files itself and stores no credentials.
 - The panel interface is in Chinese.
