@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "BT搜索",
-    "description": "在左侧栏搜索动漫花园聚合的 BT / 磁力资源：广泛/精准关键词匹配、类型筛选、排序、搜索历史与收藏。",
+    "description": "在左侧栏搜索 BT / 磁力资源，聚合 磁力猫 与 动漫花园（动漫花园、蜜柑计划、萌番组、ANi）两个来源。支持精准/广泛搜索、类型筛选、排序、历史记录与收藏。/ Search BT and magnet resources in the sidebar from 磁力猫 (Cilimao) and the Anime Garden index. Supports precise/broad search, type filters, sorting, history and favorites.",
     "detail": "docs/DETAIL.md"
   }
 }
