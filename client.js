@@ -507,11 +507,35 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // 侧栏面板由两处注册组成：panellist 放图标（props: size/active），main 放面板本体（按 key 对应）。
+    function BtSearchIcon({ size = 18, active = false }) {
+      return h('span', {
+        'aria-hidden': true,
+        style: {
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: size, height: size, lineHeight: 1, opacity: active ? 1 : 0.85
+        }
+      }, h('svg', {
+        width: Math.round(size * 0.92), height: Math.round(size * 0.92),
+        viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+        strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round'
+      },
+        h('path', { d: 'm6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15' }),
+        h('path', { d: 'm5 8 4 4' }),
+        h('path', { d: 'm12 15 4 4' })
+      ));
+    }
+
+    const PANEL_ID = 'bt-search';
+
     return {
       inject: ['slots'],
       apply(ctx) {
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-          id: 'bt-search', order: 5, label: 'BT搜索',
+          name: 'sidebar.panellist', id: PANEL_ID, order: 5, label: 'BT搜索',
+        }, BtSearchIcon));
+        ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main', key: PANEL_ID,
         }, BtSearchPanel));
       },
     };
