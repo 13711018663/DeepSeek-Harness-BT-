@@ -20,6 +20,15 @@
 
 浏览器无法直连磁力猫（该站不返回 CORS 头），因此插件的 Host 半在自己的进程里抓取上游，再通过同源只读路由 `/plugins/dsh-plugin-bt-search/search` 交给页面。接口细节见 [数据源说明](SOURCES.md)。
 
+## 桌面客户端
+
+同一套搜索能力另有独立 Windows 桌面版（不依赖 DSH，来源更多：磁力猫 / 动漫花园 / Nyaa / The Pirate Bay / EZTV / BTDig）。
+
+- 安装版 `BT-Search-Setup-1.2.2-win64.exe`：装到当前用户目录、无需管理员，自动创建快捷方式与卸载项
+- 便携版 `BT-Search-Portable-1.2.2-win64.zip`：解压即用
+
+下载见 [GitHub Releases](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/tag/v1.2.2)，源码与安装包构建脚本在仓库 `desktop/` 目录。
+
 ## 边界
 
 - 磁力猫有「点击访问」人机验证；插件在 Host 侧自动完成（`POST act=challenge`），失败时该来源单独报错，其它来源照常返回。

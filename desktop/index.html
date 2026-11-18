@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BT搜索 · 全网磁力资源搜索</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #247bbf;
+    --accent-dark: #1c6399;
+    --border: #e3e6ea;
+    --star: #f5a623;
+    --ok: #16a34a;
+    --bad: #dc2626;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 22px 16px 64px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .home-btn {
+    flex: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--accent-dark); cursor: pointer; font-size: 13px;
+    white-space: nowrap;
+  }
+  .home-btn:hover { border-color: var(--accent); }
+  .banner {
+    display: none; padding: 10px 14px; margin-bottom: 12px; border-radius: 8px;
+    background: #fff7e6; border: 1px solid #f3d19e; color: #8a5a00; font-size: 13px;
+  }
+  .banner.show { display: block; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs button, .chip {
+    padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .tabs button.active, .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .searchbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .searchbar input {
+    flex: 1; padding: 10px 14px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 15px; outline: none;
+  }
+  .searchbar input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(36,123,191,.15); }
+  .btn {
+    padding: 10px 18px; border: none; border-radius: var(--radius);
+    background: var(--accent); color: #fff; font-size: 15px; cursor: pointer;
+  }
+  .btn:hover { background: var(--accent-dark); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .toolbar .label { font-size: 12px; color: var(--muted); }
+  .chip.sm { padding: 5px 12px; border-radius: 999px; font-size: 12px; }
+  .notice { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: #fff7e6;
+    border: 1px solid #f3d19e; color: #8a5a00; font-size: 12px; }
+  .status { text-align: center; padding: 28px; color: var(--muted); font-size: 14px; }
+  .status.err { color: var(--bad); }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 10px;
+  }
+  .card .row1 { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .card .title { font-weight: 600; font-size: 14px; word-break: break-all; }
+  .card .star { background: none; border: none; cursor: pointer; font-size: 18px; line-height: 1; }
+  .card .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0; font-size: 12px; color: var(--muted); }
+  .badge { padding: 1px 8px; border-radius: 6px; font-size: 11px; }
+  .badge.type { background: #eef4fb; color: var(--accent-dark); }
+  .badge.src { background: #f0f0f5; color: #4b4b63; }
+  .badge.ok { background: #e9f9ef; color: var(--ok); }
+  .badge.no { background: #fdecec; color: var(--bad); }
+  .card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .card .actions a, .card .actions button.copy {
+    display: inline-block; padding: 6px 12px; border-radius: 7px; font-size: 13px;
+    text-decoration: none; cursor: pointer; border: 1px solid var(--border);
+    background: #fafbfc; color: var(--accent-dark);
+  }
+  .card .actions a:hover, .card .actions button.copy:hover { border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
+  .empty { text-align: center; padding: 40px; color: var(--muted); }
+  .history-item { padding: 9px 14px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 6px; cursor: pointer; font-size: 14px; }
+  .history-item:hover { border-color: var(--accent); }
+  .home-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; margin-bottom: 12px; }
+  .home-panel h3 { margin: 0 0 10px; font-size: 15px; }
+  .home-panel .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sel { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); font-size: 12px; cursor: pointer; }
+  .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    justify-content: center; margin: 18px 0 6px; }
+  .pager button.pg {
+    min-width: 34px; padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card); color: var(--text);
+    font-size: 13px; cursor: pointer;
+  }
+  .pager button.pg:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+  .pager button.pg.cur { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .pager button.pg:disabled { opacity: .45; cursor: default; }
+  .pager .gap { color: var(--muted); font-size: 13px; padding: 0 2px; }
+  .pager .jump { font-size: 12px; color: var(--muted); margin-left: 8px; }
+  .pager .jump input { width: 60px; padding: 5px 8px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>BT搜索</h1>
+      <p>全网 BT / 磁力资源搜索（动漫 · 漫画 · 音乐 · 影视 · 游戏），支持多来源、筛选、排序、历史与收藏</p>
+    </div>
+    <button class="home-btn" id="btn-home" title="返回搜索主页">← 返回主页</button>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="tabs">
+    <button data-tab="search" class="active">搜索</button>
+    <button data-tab="history">历史</button>
+    <button data-tab="favorites">收藏</button>
+  </div>
+
+  <section id="view-search">
+    <div class="searchbar">
+      <input id="q" placeholder="输入关键词，如：葬送的芙莉莲 / inception" />
+      <button class="btn" id="btn-search">搜索</button>
+    </div>
+
+    <div class="toolbar">
+      <span class="label">来源：</span>
+      <span id="source-chips"></span>
+    </div>
+    <div class="toolbar">
+      <span class="label">类型：</span>
+      <button class="chip sm active" data-type="">全部</button>
+      <button class="chip sm" data-type="动画">动画</button>
+      <button class="chip sm" data-type="漫画">漫画</button>
+      <button class="chip sm" data-type="音乐">音乐</button>
+      <button class="chip sm" data-type="日剧">日剧</button>
+      <button class="chip sm" data-type="RAW">RAW</button>
+      <button class="chip sm" data-type="合集">合集</button>
+      <button class="chip sm" data-type="特摄">特摄</button>
+      <button class="chip sm" data-type="游戏">游戏</button>
+      <span class="label" style="margin-left:8px">排序：</span>
+      <button class="chip sm active" data-sort="time">时间</button>
+      <button class="chip sm" data-sort="size">大小</button>
+      <button class="chip sm" data-sort="name">名称</button>
+      <button class="chip sm" data-sort="seeders">做种数</button>
+    </div>
+    <div class="toolbar">
+      <span class="label">搜索方式：</span>
+      <button class="chip sm active" data-mode="broad">广泛</button>
+      <button class="chip sm" data-mode="precise">精准</button>
+      <span class="label" style="margin-left:8px">每页：</span>
+      <select id="page-size" class="sel"></select>
+      <span class="label" id="page-info"></span>
+    </div>
+
+    <div id="notice"></div>
+    <div id="stats" class="hint" style="margin:10px 0 0"></div>
+    <div id="results"></div>
+  </section>
+
+  <section id="view-history" style="display:none">
+    <div id="history-list"></div>
+  </section>
+
+  <section id="view-favorites" style="display:none">
+    <div id="favorites-list"></div>
+  </section>
+
+  <p class="hint">数据来源：磁力猫 · 动漫花园聚合 · Nyaa · The Pirate Bay · EZTV · BTDig。点击磁力链接由系统默认下载器（迅雷 / BitComet）接管。</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // 本地服务模式：http(s) 打开；直接双击 html 时为 file:// 降级模式
+  var LOCAL = location.protocol === 'http:' || location.protocol === 'https:';
+  var API = LOCAL ? '/api/search' : 'https://api.animes.garden/resources';
+
+  var SOURCES = [
+    { id: 'all', label: '全部' },
+    { id: 'animes', label: '动漫花园聚合' },
+    { id: 'clm', label: '磁力猫' },
+    { id: 'nyaa', label: 'Nyaa' },
+    { id: 'tpb', label: 'The Pirate Bay' },
+    { id: 'eztv', label: 'EZTV' },
+    { id: 'btdig', label: 'BTDig' }
+  ];
+  var SOURCE_LABEL = {};
+  SOURCES.forEach(function (s) { SOURCE_LABEL[s.id] = s.label; });
+
+  // 磁力猫是 12 条/页的服务端分页站点（最多 80 页 / 约 960 条）：
+  // 页面按「每页条数 + 页码」换算 offset/limit 取窗口；其它来源一次性取回后本地分页。
+  var CLM_PAGE_SIZE = 12;
+  var CLM_MAX_PAGE = 80;
+  var CLM_MAX_TOTAL = CLM_PAGE_SIZE * CLM_MAX_PAGE;
+  var PAGE_SIZES = [10, 20, 50, 100];
+  var DEFAULT_PAGE_SIZE = 20;
+
+  var q = document.getElementById('q');
+  var results = document.getElementById('results');
+  var stats = document.getElementById('stats');
+  var notice = document.getElementById('notice');
+  var historyList = document.getElementById('history-list');
+  var favoritesList = document.getElementById('favorites-list');
+  var banner = document.getElementById('banner');
+  var pageSizeSel = document.getElementById('page-size');
+  var pageInfo = document.getElementById('page-info');
+
+  var activeSource = 'all';
+  var activeType = '';
+  var activeSort = 'time';
+  var activeMode = 'broad';
+  var lastResults = [];
+  var lastErrors = [];
+  var searched = false;
+  // 分页状态
+  var pageSize = loadPageSize();
+  var curPage = 1;
+  var totalPages = 1;
+  var loadingPage = false;
+  var clmTotal = null;          // 磁力猫匹配总数（站点给的是未筛选的总数）
+  var clmMaxPage = null;        // 站点页码上限
+  var fullList = [];            // 非磁力猫来源的整表，用于本地分页
+  var fullListKey = '';         // 整表对应的查询指纹
+  var othersList = [];          // 「全部」来源时其它来源合并后的有序列表
+  var othersListKey = '';       // 其它来源列表对应的查询指纹
+  var othersErrors = [];        // 其它来源抓取时的错误
+  var clmPool = [];             // 「全部」来源时并入的磁力猫结果池（按当前排序取前 N 条）
+  var clmPoolKey = '';          // 磁力猫结果池对应的查询指纹
+  var allPool = [];             // 全部来源的最终合并列表（全局排序后本地分页）
+  var allPoolKey = '';
+  var CLM_POOL_LIMIT = 240;     // 磁力猫并入结果池的条数上限（2 次窗口请求，每次 120）
+  var CLM_POOL_CHUNK = 120;
+
+  function loadPageSize() {
+    try {
+      var n = parseInt(localStorage.getItem('bt-page-size') || '', 10);
+      if (PAGE_SIZES.indexOf(n) >= 0) return n;
+    } catch (e) { /* file:// 下可能禁读 */ }
+    return DEFAULT_PAGE_SIZE;
+  }
+  function savePageSize(n) {
+    try { localStorage.setItem('bt-page-size', String(n)); } catch (e) {}
+  }
+
+  function load(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+    catch (e) { return []; }
+  }
+  function save(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); }
+    catch (e) { /* 某些浏览器 file:// 下禁写，忽略 */ }
+  }
+
+  function fmtSize(bytes) {
+    if (bytes == null || isNaN(bytes)) return '未知';
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = 0, n = Number(bytes);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + ' ' + u[i];
+  }
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmtDate(iso) {
+    if (!iso) return '未知时间';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function isFav(title) {
+    return load('bt-favs').some(function (f) { return f.title === title; });
+  }
+
+  function cardHtml(r) {
+    var hasMagnet = !!r.magnet;
+    var src = SOURCE_LABEL[r.source] || r.source || '未知来源';
+    var meta = [
+      '<span class="badge src">' + esc(src) + '</span>',
+      '<span class="badge type">' + esc(r.type || '其他') + '</span>',
+      hasMagnet ? '<span class="badge ok">可下载</span>' : '<span class="badge no">无磁力</span>'
+    ].join(' ');
+    var info = [esc(fmtSize(r.size)), '发布 ' + esc(fmtDate(r.createdAt))];
+    if (r.fileCount != null) info.push(esc(r.fileCount) + ' 个文件');
+    if (r.format) info.push(esc(r.format));
+    if (r.seeders != null || r.leechers != null) {
+      info.push('做种 ' + (r.seeders == null ? '-' : r.seeders)
+        + ' / 下载 ' + (r.leechers == null ? '-' : r.leechers));
+    }
+    if (r.publisher) info.push(esc(r.publisher));
+
+    var actions = [];
+    if (r.magnet) {
+      actions.push('<a href="' + esc(r.magnet) + '" title="交给系统默认下载器（迅雷 / BitComet）">磁力链接</a>');
+      actions.push('<button class="copy" data-magnet="' + esc(r.magnet) + '">复制磁力</button>');
+    }
+    if (r.torrent) {
+      actions.push('<a href="' + esc(r.torrent) + '" target="_blank" rel="noopener">种子文件</a>');
+    }
+    if (r.href) {
+      actions.push('<a href="' + esc(r.href) + '" target="_blank" rel="noopener">详情页</a>');
+    }
+
+    return '<div class="card">'
+      + '<div class="row1"><div class="title">' + esc(r.title) + '</div>'
+      + '<button class="star" data-title="' + esc(r.title) + '" title="收藏">'
+      + (isFav(r.title) ? '★' : '☆') + '</button></div>'
+      + '<div class="meta">' + meta + '</div>'
+      + '<div class="meta">' + info.join(' · ') + '</div>'
+      + (actions.length ? '<div class="actions">' + actions.join(' ') + '</div>' : '')
+      + '</div>';
+  }
+
+  function sortList(list) {
+    var arr = list.slice();
+    if (activeSort === 'size') {
+      arr.sort(function (a, b) { return (Number(b.size) || 0) - (Number(a.size) || 0); });
+    } else if (activeSort === 'name') {
+      arr.sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || '')); });
+    } else if (activeSort === 'seeders') {
+      arr.sort(function (a, b) {
+        var sa = a.seeders == null ? -1 : a.seeders;
+        var sb = b.seeders == null ? -1 : b.seeders;
+        return sb - sa;
+      });
+    } else {
+      arr.sort(function (a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    }
+    return arr;
+  }
+
+  function renderErrors(errors) {
+    if (!errors || !errors.length) { notice.innerHTML = ''; return; }
+    var parts = errors.map(function (e) {
+      return esc(SOURCE_LABEL[e.source] || e.source) + '：' + esc(e.message);
+    });
+    notice.innerHTML = '<div class="notice">部分来源不可用 — ' + parts.join('；') + '</div>';
+  }
+
+  function renderResults(list) {
+    lastResults = list || [];
+    updateStats();
+    var body;
+    if (!lastResults.length && loadingPage) {
+      body = '<div class="status">搜索中…</div>';
+    } else if (!lastResults.length) {
+      body = '<div class="empty">' + (curPage > 1
+        ? '本页没有结果，试试上一页或换个关键词。'
+        : '未找到结果，换个关键词或来源试试。') + '</div>';
+    } else {
+      body = lastResults.map(cardHtml).join('');
+    }
+    results.innerHTML = body + pagerHtml();
+  }
+
+  function isClmPaged() {
+    return activeSource === 'clm' || activeSource === 'all';
+  }
+
+  function currentTotal() {
+    if (activeSource === 'clm') {
+      if (clmTotal == null) return lastResults.length;
+      return Math.min(clmTotal, CLM_MAX_TOTAL);
+    }
+    if (activeSource === 'all') {
+      // file:// 降级模式没有本地服务：结果都在 fullList 里
+      return allPool.length || fullList.length;
+    }
+    return fullList.length;
+  }
+
+  function computeTotalPages() {
+    var total = currentTotal();
+    if (!total) return Math.max(1, curPage);
+    return Math.max(1, Math.ceil(total / pageSize));
+  }
+
+  function updateStats() {
+    if (!stats) return;
+    if (!searched) { stats.textContent = ''; return; }
+    var total = currentTotal();
+    var from = lastResults.length ? (curPage - 1) * pageSize + 1 : 0;
+    var to = from ? from + lastResults.length - 1 : 0;
+    var text = '共 ' + total + ' 条 · 第 ' + from + '–' + to + ' 条 · 第 '
+      + curPage + '/' + totalPages + ' 页';
+    if (activeSource === 'all') {
+      var othersCount = allPool.filter(function (r) { return r.source !== 'clm'; }).length;
+      var clmCount = allPool.length - othersCount;
+      text += '（其它来源 ' + othersCount + ' 条 + 磁力猫并入 ' + clmCount + ' 条';
+      if (clmTotal != null) {
+        text += '，磁力猫共匹配 ' + clmTotal + ' 条（站点最多 '
+          + (clmMaxPage || CLM_MAX_PAGE) + ' 页 / 约 ' + CLM_MAX_TOTAL + ' 条）';
+      }
+      text += '）';
+    } else if (activeSource === 'clm' && clmTotal != null) {
+      text += '（磁力猫匹配 ' + clmTotal + ' 条，站点最多 '
+        + (clmMaxPage || CLM_MAX_PAGE) + ' 页 / 约 ' + CLM_MAX_TOTAL + ' 条）';
+    }
+    if (activeType || activeMode === 'precise') {
+      text += ' · 本页筛选后 ' + lastResults.length + ' 条';
+    }
+    if (activeSource === 'clm' && (activeSort === 'name' || activeSort === 'seeders')) {
+      text += ' · 该排序仅对当前页生效';
+    }
+    stats.textContent = text;
+  }
+
+  function pageButtonsHtml() {
+    var nums = [];
+    var push = function (v) { if (nums[nums.length - 1] !== v) nums.push(v); };
+    push(1);
+    for (var p = curPage - 2; p <= curPage + 2; p++) {
+      if (p > 1 && p < totalPages) push(p);
+    }
+    if (totalPages > 1) push(totalPages);
+    var html = [];
+    for (var i = 0; i < nums.length; i++) {
+      if (i > 0 && nums[i] - nums[i - 1] > 1) html.push('<span class="gap">…</span>');
+      html.push('<button class="pg' + (nums[i] === curPage ? ' cur' : '') + '"'
+        + ' data-page="' + nums[i] + '"' + (loadingPage ? ' disabled' : '') + '>'
+        + nums[i] + '</button>');
+    }
+    return html.join('');
+  }
+
+  function pagerHtml() {
+    if (!searched || totalPages <= 1) return '';
+    var dis = loadingPage ? ' disabled' : '';
+    var prev = curPage > 1
+      ? '<button class="pg" data-page="' + (curPage - 1) + '"' + dis + '>« 上一页</button>'
+      : '<button class="pg" disabled>« 上一页</button>';
+    var next = curPage < totalPages
+      ? '<button class="pg" data-page="' + (curPage + 1) + '"' + dis + '>下一页 »</button>'
+      : '<button class="pg" disabled>下一页 »</button>';
+    return '<div class="pager">' + prev + pageButtonsHtml() + next
+      + '<span class="jump">跳至 <input id="page-jump" type="number" min="1" max="'
+      + totalPages + '" placeholder="' + curPage + '"> 页</span></div>';
+  }
+
+  function maybeSort(list) {
+    // 「全部」来源的结果池已全局排序，页内不再重排；
+    // 磁力猫单源时间/大小是服务端全局排序，页内不要重排
+    if (activeSource === 'all') return list;
+    if (activeSource === 'clm' && (activeSort === 'time' || activeSort === 'size')) return list;
+    return sortList(list);
+  }
+
+  function applyPage(n, rows, errs) {
+    loadingPage = false;
+    curPage = n;
+    totalPages = computeTotalPages();
+    lastErrors = errs || [];
+    lastResults = maybeSort(dedupe(rows || []));
+    renderResults(lastResults);
+    renderErrors(lastErrors);
+    if (pageInfo) pageInfo.textContent = '第 ' + curPage + '/' + totalPages + ' 页';
+    var top = results.getBoundingClientRect().top + window.pageYOffset - 80;
+    window.scrollTo({ top: top < 0 ? 0 : top, behavior: 'smooth' });
+  }
+
+  function failPage(n, msg) {
+    loadingPage = false;
+    renderResults(lastResults);
+    notice.innerHTML = '<div class="notice">加载第 ' + n + ' 页失败 — ' + esc(msg) + '</div>';
+  }
+
+  function getJson(url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function takeClmMeta(data) {
+    if (data.total != null) {
+      clmTotal = data.total;
+      clmMaxPage = data.maxPage == null ? null : data.maxPage;
+    }
+  }
+
+  function ensureOthers(kw, cb) {
+    // 其它来源合并成一张有序列表（按当前排序），只在查询指纹变化时重新抓取
+    var key = ['others', kw, activeType, activeMode, activeSort].join('|');
+    if (othersListKey === key) { cb(othersList, othersErrors); return; }
+    var ids = SOURCES.filter(function (s) {
+      return s.id !== 'all' && s.id !== 'clm';
+    }).map(function (s) { return s.id; });
+    var collected = [];
+    var errs = [];
+    var pending = ids.length;
+    if (!pending) {
+      othersList = [];
+      othersErrors = [];
+      othersListKey = key;
+      cb(othersList, othersErrors);
+      return;
+    }
+    var finish = function () {
+      pending--;
+      if (pending > 0) return;
+      othersList = sortList(dedupe(collected));
+      othersErrors = errs;
+      othersListKey = key;
+      cb(othersList, othersErrors);
+    };
+    ids.forEach(function (src) {
+      getJson(apiUrl(src, kw, 0, pageSize))
+        .then(function (data) {
+          (data.errors || []).forEach(function (e) { errs.push(e); });
+          collected = collected.concat(data.results || []);
+          finish();
+        })
+        .catch(function (e) {
+          errs.push({ source: src, message: e.message });
+          finish();
+        });
+    });
+  }
+
+  function ensureClmPool(kw, cb) {
+    // 磁力猫按当前排序并入前 CLM_POOL_LIMIT 条（分 2 次窗口请求，每次 120 条，并行）
+    var key = ['clmpool', kw, activeType, activeMode, activeSort].join('|');
+    if (clmPoolKey === key) { cb(clmPool, []); return; }
+    var errs = [];
+    var parts = [];
+    var pending = 2;
+    var finish = function () {
+      pending--;
+      if (pending > 0) return;
+      clmPool = dedupe((parts[0] || []).concat(parts[1] || []));
+      clmPoolKey = key;
+      cb(clmPool, errs);
+    };
+    [0, CLM_POOL_CHUNK].forEach(function (off) {
+      getJson(apiUrl('clm', kw, off, CLM_POOL_CHUNK))
+        .then(function (data) {
+          takeClmMeta(data);
+          (data.errors || []).forEach(function (e) { errs.push(e); });
+          parts[off / CLM_POOL_CHUNK] = data.results || [];
+          finish();
+        })
+        .catch(function (e) {
+          errs.push({ source: 'clm', message: e.message });
+          parts[off / CLM_POOL_CHUNK] = [];
+          finish();
+        });
+    });
+  }
+
+  function loadPage(n) {
+    var kw = q.value.trim();
+    if (!kw || loadingPage) return;
+    n = Math.max(1, Math.min(totalPages, parseInt(n, 10) || 1));
+    loadingPage = true;
+    renderResults(lastResults);          // 先把翻页按钮置灰
+    var offset = (n - 1) * pageSize;
+
+    // 1) 纯磁力猫：服务端窗口分页
+    if (activeSource === 'clm') {
+      getJson(apiUrl('clm', kw, offset, pageSize))
+        .then(function (data) {
+          takeClmMeta(data);
+          applyPage(n, data.results, data.errors);
+        })
+        .catch(function (e) { failPage(n, e.message); });
+      return;
+    }
+
+    // 2) 全部来源：其它来源整表 + 磁力猫前 240 条，并行抓取，
+    //    合并去重后按当前排序全局排序，本地分页
+    if (activeSource === 'all') {
+      var poolKey = ['allpool', kw, activeType, activeMode, activeSort].join('|');
+      if (allPoolKey === poolKey && allPool.length) {
+        applyPage(n, allPool.slice(offset, offset + pageSize), []);
+        return;
+      }
+      var pending = 2;
+      var oRows = [];
+      var cRows = [];
+      var errs = [];
+      var gotCount = 0;
+      function progress() {
+        results.innerHTML = '<div class="status">搜索中…已收到 ' + gotCount
+          + ' 条（等待 ' + pending + ' 组来源）</div>' + pagerHtml();
+      }
+      function finish() {
+        pending--;
+        if (pending > 0) { progress(); return; }
+        allPool = sortList(dedupe(oRows.concat(cRows)));
+        allPoolKey = poolKey;
+        applyPage(n, allPool.slice(offset, offset + pageSize), errs);
+      }
+      ensureOthers(kw, function (rows, e) {
+        oRows = rows;
+        gotCount += rows.length;
+        (e || []).forEach(function (x) { errs.push(x); });
+        finish();
+      });
+      ensureClmPool(kw, function (rows, e) {
+        cRows = rows;
+        gotCount += rows.length;
+        (e || []).forEach(function (x) { errs.push(x); });
+        finish();
+      });
+      return;
+    }
+
+    // 3) 其它单源：整表取一次，之后本地分页
+    var key = [activeSource, kw, activeType, activeMode, activeSort].join('|');
+    if (fullListKey === key && fullList.length) {
+      applyPage(n, fullList.slice(offset, offset + pageSize), []);
+      return;
+    }
+    getJson(apiUrl(activeSource, kw, 0, pageSize))
+      .then(function (data) {
+        fullList = data.results || [];
+        fullListKey = key;
+        clmTotal = null;
+        clmMaxPage = null;
+        applyPage(n, fullList.slice(offset, offset + pageSize), data.errors);
+      })
+      .catch(function (e) { failPage(n, e.message); });
+  }
+
+  function renderHome() {
+    var hist = load('bt-hist');
+    var favs = load('bt-favs');
+    var html = '';
+    html += '<div class="home-panel"><h3>最近搜索</h3>';
+    if (hist.length) {
+      html += '<div class="chips">' + hist.slice(0, 8).map(function (k) {
+        return '<button class="chip sm home-kw" data-kw="' + esc(k) + '">' + esc(k) + '</button>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div style="color:var(--muted);font-size:13px">还没有搜索记录。</div>';
+    }
+    html += '</div>';
+    html += '<div class="home-panel"><h3>收藏（' + favs.length + '）</h3>';
+    if (favs.length) {
+      html += '<div style="color:var(--muted);font-size:13px">已收藏 ' + favs.length
+        + ' 个资源，切换到「收藏」标签查看。</div>';
+    } else {
+      html += '<div style="color:var(--muted);font-size:13px">暂无收藏，点击结果卡片上的 ☆ 保存。</div>';
+    }
+    html += '</div>';
+    results.innerHTML = html;
+  }
+
+  function renderHistory() {
+    var hist = load('bt-hist');
+    if (!hist.length) {
+      historyList.innerHTML = '<div class="empty">暂无搜索历史。</div>';
+      return;
+    }
+    historyList.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'
+      + '<button class="chip sm" id="clear-hist">清空历史</button></div>'
+      + hist.map(function (k) {
+          return '<div class="history-item" data-kw="' + esc(k) + '">' + esc(k) + '</div>';
+        }).join('');
+  }
+
+  function renderFavorites() {
+    var favs = load('bt-favs');
+    if (!favs.length) {
+      favoritesList.innerHTML = '<div class="empty">暂无收藏，点击结果卡片上的 ☆ 收藏资源。</div>';
+      return;
+    }
+    favoritesList.innerHTML = favs.map(cardHtml).join('');
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tabs button').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    document.getElementById('view-search').style.display = tab === 'search' ? '' : 'none';
+    document.getElementById('view-history').style.display = tab === 'history' ? '' : 'none';
+    document.getElementById('view-favorites').style.display = tab === 'favorites' ? '' : 'none';
+    if (tab === 'history') renderHistory();
+    if (tab === 'favorites') renderFavorites();
+  }
+
+  function goHome() {
+    q.value = '';
+    lastResults = [];
+    lastErrors = [];
+    searched = false;
+    notice.innerHTML = '';
+    clmTotal = null;
+    clmMaxPage = null;
+    fullList = [];
+    fullListKey = '';
+    othersList = [];
+    othersListKey = '';
+    othersErrors = [];
+    clmPool = [];
+    clmPoolKey = '';
+    allPool = [];
+    allPoolKey = '';
+    curPage = 1;
+    totalPages = 1;
+    loadingPage = false;
+    if (stats) stats.textContent = '';
+    if (pageInfo) pageInfo.textContent = '';
+    document.querySelectorAll('[data-type]').forEach(function (c) {
+      c.classList.toggle('active', c.dataset.type === '');
+    });
+    document.querySelectorAll('[data-sort]').forEach(function (c) {
+      c.classList.toggle('active', c.dataset.sort === 'time');
+    });
+    activeType = '';
+    activeSort = 'time';
+    switchTab('search');
+    renderHome();
+    q.focus();
+  }
+
+  function toggleFav(title) {
+    var favs = load('bt-favs');
+    var exists = favs.some(function (f) { return f.title === title; });
+    if (exists) {
+      favs = favs.filter(function (f) { return f.title !== title; });
+    } else {
+      var full = lastResults.filter(function (r) { return r.title === title; })[0]
+        || favs.filter(function (r) { return r.title === title; })[0]
+        || { title: title };
+      favs = [full].concat(favs);
+    }
+    save('bt-favs', favs);
+    if (document.getElementById('view-favorites').style.display !== 'none') {
+      renderFavorites();
+    } else if (searched) {
+      renderResults(lastResults);
+    } else {
+      renderHome();
+    }
+  }
+
+  function copyMagnet(m) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = m;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(m).then(function () {}, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function saveHistory(kw) {
+    var hist = load('bt-hist');
+    hist = [kw].concat(hist.filter(function (x) { return x !== kw; })).slice(0, 20);
+    save('bt-hist', hist);
+  }
+
+  // ---- 搜索 ----
+
+  function apiUrl(src, kw, offset, limit) {
+    return API + '?q=' + encodeURIComponent(kw)
+      + '&source=' + encodeURIComponent(src)
+      + '&type=' + encodeURIComponent(activeType)
+      + '&mode=' + encodeURIComponent(activeMode)
+      + '&sort=' + encodeURIComponent(activeSort)
+      + '&offset=' + (offset || 0)
+      + '&limit=' + (limit || pageSize);
+  }
+
+  function dedupe(list) {
+    var seen = {};
+    var out = [];
+    list.forEach(function (r) {
+      var key = r.infoHash
+        || ((r.title || '').toLowerCase() + '|' + (r.size == null ? '' : r.size));
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push(r);
+    });
+    return out;
+  }
+
+  function doSearch() {
+    var kw = q.value.trim();
+    if (!kw) { q.focus(); return; }
+    saveHistory(kw);
+    searched = true;
+    lastResults = [];
+    lastErrors = [];
+    notice.innerHTML = '';
+    clmTotal = null;
+    clmMaxPage = null;
+    fullList = [];
+    fullListKey = '';
+    othersErrors = [];
+    curPage = 1;
+    totalPages = 1;
+    loadingPage = false;
+
+    // file:// 降级：仅直连 Anime Garden，取回后在本地分页
+    if (!LOCAL) {
+      var url = API + '?search=' + encodeURIComponent(kw) + '&limit=60';
+      if (activeType) url += '&types=' + encodeURIComponent(activeType);
+      results.innerHTML = '<div class="status">搜索中…</div>';
+      fetch(url)
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          var list = (data && data.resources) || [];
+          var mapped = list.map(function (r) {
+            return {
+              title: r.title, source: r.provider, type: r.type, size: r.size,
+              createdAt: r.createdAt, magnet: r.magnet, torrent: r.torrent,
+              href: r.href, publisher: (r.publisher && r.publisher.name) || '',
+              seeders: null, leechers: null
+            };
+          });
+          if (activeMode === 'precise') {
+            var tokens = kw.trim().split(/\s+/).map(function (t) { return t.toLowerCase(); });
+            mapped = mapped.filter(function (r) {
+              return tokens.every(function (t) {
+                return (r.title || '').toLowerCase().indexOf(t) >= 0;
+              });
+            });
+          }
+          fullList = sortList(mapped);
+          fullListKey = ['offline', kw, activeType, activeMode, activeSort].join('|');
+          clmTotal = null;
+          clmMaxPage = null;
+          curPage = 1;
+          totalPages = Math.max(1, Math.ceil(fullList.length / pageSize));
+          applyPage(1, fullList.slice(0, pageSize), []);
+        })
+        .catch(function (e) {
+          results.innerHTML = '<div class="status err">搜索失败：' + esc(e.message) + '（请检查网络连接）</div>';
+        });
+      return;
+    }
+
+    if (pageInfo) pageInfo.textContent = '';
+    results.innerHTML = '<div class="status">搜索中…</div>';
+    updateStats();
+    loadPage(1);
+  }
+
+  // ---- 初始化 ----
+
+  function buildSourceChips() {
+    var box = document.getElementById('source-chips');
+    box.innerHTML = SOURCES.map(function (s) {
+      return '<button class="chip sm' + (s.id === 'all' ? ' active' : '')
+        + '" data-src="' + s.id + '">' + esc(s.label) + '</button>';
+    }).join(' ');
+  }
+
+  document.getElementById('btn-search').addEventListener('click', doSearch);
+  document.getElementById('btn-home').addEventListener('click', goHome);
+  q.addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
+
+  document.querySelector('.tabs').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tab]');
+    if (b) switchTab(b.dataset.tab);
+  });
+
+  document.getElementById('source-chips').addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-src]');
+    if (!chip) return;
+    document.querySelectorAll('[data-src]').forEach(function (c) { c.classList.remove('active'); });
+    chip.classList.add('active');
+    activeSource = chip.dataset.src;
+    if (searched && q.value.trim()) doSearch();   // 换来源后重新从第 1 页查
+  });
+
+  var typeRow = document.querySelector('[data-type]').parentElement;
+  typeRow.addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-type]');
+    if (!chip) return;
+    document.querySelectorAll('[data-type]').forEach(function (c) { c.classList.remove('active'); });
+    chip.classList.add('active');
+    activeType = chip.dataset.type;
+    if (searched && q.value.trim()) doSearch();   // 类型筛选作用于整页窗口，重新取第 1 页
+  });
+
+  var sortRow = document.querySelector('[data-sort]').parentElement;
+  sortRow.addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-sort]');
+    if (!chip) return;
+    document.querySelectorAll('[data-sort]').forEach(function (c) { c.classList.remove('active'); });
+    chip.classList.add('active');
+    activeSort = chip.dataset.sort;
+    if (searched && q.value.trim()) doSearch();   // 排序变了要从第 1 页重取（服务端排序）
+  });
+
+  var modeRow = document.querySelector('[data-mode]').parentElement;
+  modeRow.addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-mode]');
+    if (!chip) return;
+    document.querySelectorAll('[data-mode]').forEach(function (c) { c.classList.remove('active'); });
+    chip.classList.add('active');
+    activeMode = chip.dataset.mode;
+    if (searched && q.value.trim()) doSearch();
+  });
+
+  // 每页条数：记住选择，改了就回第 1 页重查
+  function buildPageSizeOptions() {
+    pageSizeSel.innerHTML = PAGE_SIZES.map(function (n) {
+      return '<option value="' + n + '"' + (n === pageSize ? ' selected' : '') + '>'
+        + n + ' 条</option>';
+    }).join('');
+  }
+  pageSizeSel.addEventListener('change', function () {
+    var n = parseInt(pageSizeSel.value, 10);
+    if (PAGE_SIZES.indexOf(n) < 0) return;
+    pageSize = n;
+    savePageSize(n);
+    if (searched && q.value.trim()) doSearch();
+  });
+
+  function onResultClick(e) {
+    var pg = e.target.closest('[data-page]');
+    if (pg && !pg.disabled) { loadPage(parseInt(pg.dataset.page, 10)); return; }
+    var star = e.target.closest('.star');
+    if (star) { toggleFav(star.dataset.title); return; }
+    var copy = e.target.closest('.copy');
+    if (copy) copyMagnet(copy.dataset.magnet);
+  }
+  results.addEventListener('click', onResultClick);
+  favoritesList.addEventListener('click', onResultClick);
+
+  results.addEventListener('keydown', function (e) {
+    if (e.target.id !== 'page-jump' || e.key !== 'Enter') return;
+    var n = parseInt(e.target.value, 10);
+    if (n >= 1) loadPage(n);
+  });
+
+  results.addEventListener('click', function (e) {
+    var kwBtn = e.target.closest('.home-kw');
+    if (kwBtn) { q.value = kwBtn.dataset.kw; doSearch(); }
+  });
+
+  historyList.addEventListener('click', function (e) {
+    if (e.target.closest('#clear-hist')) { save('bt-hist', []); renderHistory(); return; }
+    var item = e.target.closest('.history-item');
+    if (item) { q.value = item.dataset.kw; switchTab('search'); doSearch(); }
+  });
+
+  buildSourceChips();
+  buildPageSizeOptions();
+
+  if (LOCAL) {
+    // 心跳：服务端据此在页面关闭后自动退出
+    function ping() { fetch('/api/ping').catch(function () {}); }
+    ping();
+    setInterval(ping, 5000);
+  }
+
+  if (!LOCAL) {
+    banner.className = 'banner show';
+    banner.innerHTML = '当前为离线页面模式（仅支持「动漫花园聚合」直连搜索）。'
+      + '双击桌面「BT搜索」快捷方式启动本地服务后，可启用 磁力猫 / Nyaa / Pirate Bay / EZTV / BTDig 等全部来源。';
+  }
+
+  renderHome();
+})();
+</script>
+</body>
+</html>

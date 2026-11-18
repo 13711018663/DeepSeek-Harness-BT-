@@ -20,6 +20,18 @@ A BT / magnet resource search panel in the DeepSeek Harness sidebar. It aggregat
 
 The browser cannot call 磁力猫 directly because the site sends no CORS headers, so the plugin's Host half fetches both upstreams inside the DSH process and answers one same-origin read-only route, `/plugins/dsh-plugin-bt-search/search`. The endpoint, the click gate and the info-hash shortcut are documented in [SOURCES.md](SOURCES.md).
 
+## Desktop client
+
+The same search engine is also available as a standalone Windows desktop app (no DSH needed; extra
+sources: 磁力猫, Anime Garden, Nyaa, The Pirate Bay, EZTV, BTDig).
+
+- Installer `BT-Search-Setup-1.2.2-win64.exe`: per-user install without admin rights, with desktop /
+  Start-menu shortcuts and an uninstall entry.
+- Portable `BT-Search-Portable-1.2.2-win64.zip`: unzip and run.
+
+Download from [GitHub Releases](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/tag/v1.2.2);
+sources and the installer build scripts live in the repository's `desktop/` folder.
+
 ## Limitations
 
 - 磁力猫 pages its index at 12 items per page and caps a search at 80 pages (~960 results); the API fetches offset/limit windows (up to 120 items per request, the first page serially past the click gate and the rest 4-way parallel). The single-source view can page through all 960; the "all" source merges the top 240 for speed, and the stats line says so.

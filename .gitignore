@@ -3,3 +3,11 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# desktop client build artifacts
+desktop/dist/
+desktop/installer/payload/
+desktop/installer/out/
+desktop/installer/icon.ico
+release/
+*.spec
