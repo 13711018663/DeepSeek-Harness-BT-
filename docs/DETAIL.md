@@ -27,7 +27,7 @@
 - 安装版 `BT-Search-Setup-1.2.2-win64.exe`：装到当前用户目录、无需管理员，自动创建快捷方式与卸载项
 - 便携版 `BT-Search-Portable-1.2.2-win64.zip`：解压即用
 
-下载见 [GitHub Releases](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/tag/v1.2.2)，源码与安装包构建脚本在仓库 `desktop/` 目录。
+下载见 [GitHub Releases](https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/releases/tag/v1.2.2)，源码与安装包构建脚本在仓库 `desktop/` 目录。
 
 ## 边界
 

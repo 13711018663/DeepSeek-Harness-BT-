@@ -29,7 +29,7 @@ sources: 磁力猫, Anime Garden, Nyaa, The Pirate Bay, EZTV, BTDig).
   Start-menu shortcuts and an uninstall entry.
 - Portable `BT-Search-Portable-1.2.2-win64.zip`: unzip and run.
 
-Download from [GitHub Releases](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/tag/v1.2.2);
+Download from [GitHub Releases](https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/releases/tag/v1.2.2);
 sources and the installer build scripts live in the repository's `desktop/` folder.
 
 ## Limitations

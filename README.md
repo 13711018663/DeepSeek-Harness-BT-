@@ -21,12 +21,12 @@ The same search engine is also available as a standalone Windows app in [desktop
 (no DSH required), with extra sources (磁力猫, Anime Garden, Nyaa, The Pirate Bay, EZTV, BTDig):
 
 - **Installer** (Windows 10/11 x64, per-user install, no admin rights):
-  [BT-Search-Setup-1.2.2-win64.exe](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Setup-1.2.2-win64.exe)
+  [BT-Search-Setup-1.2.2-win64.exe](https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Setup-1.2.2-win64.exe)
   — installs to `%LOCALAPPDATA%\Programs\BT搜索`, creates desktop / Start-menu shortcuts and
   an uninstall entry, and imports the bundled self-signed certificate by default so the app
   itself no longer trips SmartScreen. The installer may still show one "unknown publisher"
   prompt on first run (More info → Run anyway).
-- **Portable**: [BT-Search-Portable-1.2.2-win64.zip](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Portable-1.2.2-win64.zip)
+- **Portable**: [BT-Search-Portable-1.2.2-win64.zip](https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Portable-1.2.2-win64.zip)
   — unzip anywhere and run `BT搜索\BT搜索.exe`.
 
 SHA256: `5B4F99160BF6B2A1591A64BB5B89F081822B57B70DAABF006069B066BADB7F5D` (installer),
@@ -95,11 +95,11 @@ MIT — see [LICENSE](LICENSE).
 同一套搜索能力另有独立 Windows 桌面版（不依赖 DSH，来源更多：磁力猫 / 动漫花园 / Nyaa / The Pirate Bay / EZTV / BTDig），源码与构建脚本见 [desktop/](desktop/README.md)：
 
 - **安装版**（Win10/11 x64，装到当前用户目录，无需管理员）：
-  [BT-Search-Setup-1.2.2-win64.exe](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Setup-1.2.2-win64.exe)
+  [BT-Search-Setup-1.2.2-win64.exe](https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Setup-1.2.2-win64.exe)
   —— 安装到 `%LOCALAPPDATA%\Programs\BT搜索`，自动创建桌面 / 开始菜单快捷方式与卸载项，
   并默认导入随包证书，装完后程序运行不再被 SmartScreen 拦截（安装器自身首次运行仍可能提示一次
   「未知发布者」，点「更多信息 → 仍要运行」即可）。
-- **便携版**：[BT-Search-Portable-1.2.2-win64.zip](https://github.com/13711018663/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Portable-1.2.2-win64.zip)
+- **便携版**：[BT-Search-Portable-1.2.2-win64.zip](https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/releases/download/v1.2.2/BT-Search-Portable-1.2.2-win64.zip)
   —— 解压到任意目录，双击 `BT搜索\BT搜索.exe`。
 
 SHA256：安装包 `5B4F99160BF6B2A1591A64BB5B89F081822B57B70DAABF006069B066BADB7F5D`，

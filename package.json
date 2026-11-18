@@ -4,7 +4,7 @@
   "description": "BT / magnet search panel for the DeepSeek Harness sidebar, aggregating 磁力猫 (Cilimao) and the Anime Garden index.",
   "type": "module",
   "license": "MIT",
-  "author": "13711018663",
+  "author": "QIU-KKKK",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -19,13 +19,13 @@
     "磁力猫",
     "磁力链接"
   ],
-  "homepage": "https://github.com/13711018663/DeepSeek-Harness-BT-#readme",
+  "homepage": "https://github.com/QIU-KKKK/DeepSeek-Harness-BT-#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/13711018663/DeepSeek-Harness-BT-.git"
+    "url": "git+https://github.com/QIU-KKKK/DeepSeek-Harness-BT-.git"
   },
   "bugs": {
-    "url": "https://github.com/13711018663/DeepSeek-Harness-BT-/issues"
+    "url": "https://github.com/QIU-KKKK/DeepSeek-Harness-BT-/issues"
   },
   "exports": {
     ".": "./index.js",
