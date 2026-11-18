@@ -427,13 +427,13 @@ window.__ModuleLoader__.load({
         });
       };
 
-      const applyPage = (n, rows, errs, src, st, note) => {
+      const applyPage = (n, rows, errs, src, st, note, freshTotal) => {
         setLoadingPage(false);
         setLoading(false);
         const list = maybeSort(dedupeRows(rows || []), src, st);
         poolState.lastRows = list;
         setCurPage(n);
-        setTotalPages(computeTotalPages(src, n));
+        setTotalPages(computeTotalPages(src, n, freshTotal));
         setResults(list);
         setError('');
         setNotice(buildNotice(note || '', (errs || []).filter(Boolean)));
@@ -457,8 +457,12 @@ window.__ModuleLoader__.load({
         return poolState.fullList.length;
       };
 
-      const computeTotalPages = (src, n) => {
-        const total = currentTotal(src);
+      const computeTotalPages = (src, n, freshTotal) => {
+        // freshTotal：磁力猫的站点总数刚拿到时 state 还没更新，这里显式传入，
+        // 避免用上一轮闭包里的旧值算错页码（结果池在模块变量里，本身就是新值）。
+        const total = freshTotal != null
+          ? (src === 'clm' ? Math.min(freshTotal, CLM_MAX_TOTAL) : freshTotal)
+          : currentTotal(src);
         if (!total) return Math.max(1, n);
         return Math.max(1, Math.ceil(total / pageSize));
       };
@@ -484,7 +488,7 @@ window.__ModuleLoader__.load({
             const data = await fetchHost(kw, 'clm', md, tp, offset, ps, st, signal);
             if (seq !== reqSeq.current) return;
             takeClmMeta(data);
-            applyPage(n, data.results, data.errors, src, st);
+            applyPage(n, data.results, data.errors, src, st, null, data.total);
           } catch (e) {
             if (seq !== reqSeq.current) return;
             if (e && e.name === 'AbortError') {
