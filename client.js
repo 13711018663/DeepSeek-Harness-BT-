@@ -37,13 +37,31 @@ window.__ModuleLoader__.load({
       star: '#f5a623'
     };
 
-    const CACHE = new Map();
-    const CACHE_TTL = 60 * 1000;
-    // 磁力猫首屏要请求 5 页（含可能的验证门），超时要留够余量。
-    const TIMEOUT_MS = 18000;
-    // 磁力猫 12 条/页：首屏 5 页 = 60 条，点「加载更多」再追加 5 页。
-    const PAGES_PER_BATCH = 5;
-    const PAGE_SIZE = 12;
+    // 结果池（模块级缓存，按查询指纹失效）：语义与桌面版一致。
+    // fullList = 单源整表（本地分页）；clmPool/allPool = 「全部」来源的结果池。
+    const poolState = {
+      fullList: [],
+      fullListKey: '',
+      clmPool: [],
+      clmPoolKey: '',
+      allPool: [],
+      allPoolKey: '',
+      lastRows: []
+    };
+
+    // 磁力猫首屏要请求多页窗口（含可能的验证门），超时要留够余量。
+    const TIMEOUT_MS = 25000;
+    // 磁力猫 12 条/页、单次搜索最多 80 页（约 960 条）：页面按「每页条数 + 页码」
+    // 换算 offset/limit 取窗口；其它来源整表取回后本地分页。
+    const CLM_PAGE_SIZE = 12;
+    const CLM_MAX_PAGE = 80;
+    const CLM_MAX_TOTAL = CLM_PAGE_SIZE * CLM_MAX_PAGE;
+    const PAGE_SIZES = [10, 20, 50, 100];
+    const DEFAULT_PAGE_SIZE = 20;
+    // 「全部」来源并入磁力猫前 240 条（2 次窗口请求，每次 120 条，并行）
+    const CLM_POOL_LIMIT = 240;
+    const CLM_POOL_CHUNK = 120;
+    const SORT_OPTIONS = [['date', '时间'], ['size', '大小'], ['name', '名称']];
 
     function load(key) {
       try { return JSON.parse(localStorage.getItem(key) || '[]'); }
@@ -52,6 +70,37 @@ window.__ModuleLoader__.load({
     function save(key, val) {
       try { localStorage.setItem(key, JSON.stringify(val)); }
       catch (e) { /* 忽略写入失败 */ }
+    }
+
+    function loadPageSize() {
+      try {
+        const n = parseInt(localStorage.getItem('bt-page-size') || '', 10);
+        if (PAGE_SIZES.indexOf(n) >= 0) return n;
+      } catch (e) { /* 忽略读取失败 */ }
+      return DEFAULT_PAGE_SIZE;
+    }
+    function savePageSize(n) {
+      try { localStorage.setItem('bt-page-size', String(n)); }
+      catch (e) { /* 忽略写入失败 */ }
+    }
+
+    function sortList(list, sort) {
+      const arr = list.slice();
+      if (sort === 'size') {
+        arr.sort((a, b) => (Number(b.size) || 0) - (Number(a.size) || 0));
+      } else if (sort === 'name') {
+        arr.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+      } else {
+        arr.sort((a, b) => timeOf(b.createdAt) - timeOf(a.createdAt));
+      }
+      return arr;
+    }
+    // 「全部」来源的结果池已全局排序，页内不再重排；
+    // 磁力猫单源时间/大小是服务端全局排序，页内不要重排。
+    function maybeSort(list, source, sort) {
+      if (source === 'all') return list;
+      if (source === 'clm' && (sort === 'date' || sort === 'size')) return list;
+      return sortList(list, sort);
     }
 
     function fmtSize(bytes) {
@@ -165,14 +214,18 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = useState('search');
       const [history, setHistory] = useState(() => load('bt-search-history'));
       const [favorites, setFavorites] = useState(() => load('bt-search-favorites'));
-      // 磁力猫分页状态：已取到第几页、站点总数、页码上限
-      const [loadingMore, setLoadingMore] = useState(false);
+      // 分页状态：每页条数、当前页、总页数、磁力猫站点元数据、并行抓取进度
+      const [pageSize, setPageSize] = useState(loadPageSize);
+      const [curPage, setCurPage] = useState(1);
+      const [totalPages, setTotalPages] = useState(1);
+      const [loadingPage, setLoadingPage] = useState(false);
       const [clmTotal, setClmTotal] = useState(null);
       const [clmMaxPage, setClmMaxPage] = useState(null);
-      const [clmNextPage, setClmNextPage] = useState(1);
+      const [poolProgress, setPoolProgress] = useState('');
 
       const reqSeq = useRef(0);
       const ctrlRef = useRef(null);
+      const containerRef = useRef(null);
 
       const saveHistory = (kw) => {
         const updated = [kw].concat(history.filter((x) => x !== kw)).slice(0, 20);
@@ -202,13 +255,16 @@ window.__ModuleLoader__.load({
         save('bt-search-favorites', updated);
       };
 
-      const fetchHost = async (kw, src, md, page, pages, signal) => {
-        // type 不参与请求：类型筛选在前端即时生效，切换筛选不必重新抓取。
+      const fetchHost = async (kw, src, md, tp, offset, limit, st, signal) => {
+        // type/sort 参与请求：类型筛选与站点排序由 Host 侧（服务端）执行，
+        // 翻页时窗口请求才会命中正确的筛选结果。
         const url = HOST_API + '?q=' + encodeURIComponent(kw)
           + '&source=' + encodeURIComponent(src)
+          + '&type=' + encodeURIComponent(tp)
           + '&mode=' + encodeURIComponent(md)
-          + '&page=' + (page || 1)
-          + '&pages=' + (pages || PAGES_PER_BATCH);
+          + '&sort=' + encodeURIComponent(st)
+          + '&offset=' + (offset || 0)
+          + '&limit=' + (limit || DEFAULT_PAGE_SIZE);
         const resp = await fetch(url, { signal, headers: { Accept: 'application/json' } });
         let data = null;
         try { data = await resp.json(); } catch (e) { data = null; }
@@ -237,6 +293,21 @@ window.__ModuleLoader__.load({
         return { results: rows, errors: [] };
       };
 
+      // 动漫花园：优先走 Host 代理；Host 未就绪时直连（该接口允许跨域）。
+      const fetchAnimes = async (kw, md, tp, st, signal) => {
+        try {
+          return await fetchHost(kw, 'animes', md, tp, 0, 100, st, signal);
+        } catch (hostError) {
+          if (hostError && hostError.name === 'AbortError') throw hostError;
+          const data = await fetchDirect(kw, md, signal);
+          return {
+            results: data.results,
+            errors: [],
+            fallbackNote: 'Host 代理未就绪，动漫花园改为直连。',
+          };
+        }
+      };
+
       const runSearch = async (kwArg, overrides) => {
         const kw = String(kwArg == null ? query : kwArg).trim();
         if (!kw) { setError('请输入搜索关键词'); return; }
@@ -244,6 +315,9 @@ window.__ModuleLoader__.load({
         // 显式传参：setState 之后同一轮事件里读到的仍是旧闭包值。
         const useSource = (overrides && overrides.source) || source;
         const useMode = (overrides && overrides.mode) || mode;
+        const useSort = (overrides && overrides.sort) || sort;
+        const useType = (overrides && overrides.type) || type;
+        const usePageSize = (overrides && overrides.pageSize) || pageSize;
 
         saveHistory(kw);
         setQuery(kw);
@@ -251,119 +325,246 @@ window.__ModuleLoader__.load({
         setNotice('');
         setTab('search');
         setHasSearched(true);
-        // 新一轮搜索重置磁力猫分页状态
+        setSource(useSource);
+        setMode(useMode);
+        setSort(useSort);
+        setType(useType);
+        setPageSize(usePageSize);
+        // 新一轮搜索重置分页状态；整表缓存按指纹失效（指纹含类型/排序），
+        // 「全部」来源的结果池不含每页条数，保留以便切换每页条数时零请求重切。
         setClmTotal(null);
         setClmMaxPage(null);
-        setClmNextPage(1);
-        setLoadingMore(false);
-
-        const cacheKey = [useMode, useSource, kw, 1, PAGES_PER_BATCH].join('|');
-        const hit = CACHE.get(cacheKey);
-        if (hit && Date.now() - hit.t < CACHE_TTL) {
-          setResults(hit.results);
-          setNotice(hit.notice || '');
-          setClmTotal(hit.total == null ? null : hit.total);
-          setClmMaxPage(hit.maxPage == null ? null : hit.maxPage);
-          setClmNextPage(hit.nextPage || 1 + PAGES_PER_BATCH);
-          return;
-        }
+        setCurPage(1);
+        setTotalPages(1);
+        setPoolProgress('');
+        setResults([]);
+        poolState.fullList = [];
+        poolState.fullListKey = '';
+        poolState.lastRows = [];
 
         if (ctrlRef.current) {
           try { ctrlRef.current.abort(); } catch (e) { /* 忽略 */ }
         }
-        const seq = reqSeq.current + 1;
-        reqSeq.current = seq;
+        reqSeq.current += 1;
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         ctrlRef.current = ctrl;
-        let timedOut = false;
+        const ctx = { timedOut: false };
         const timer = ctrl ? setTimeout(() => {
-          timedOut = true;
+          ctx.timedOut = true;
           try { ctrl.abort(); } catch (e) { /* 忽略 */ }
         }, TIMEOUT_MS) : null;
 
         setLoading(true);
         try {
-          let data = null;
-          let fallbackNote = '';
-          try {
-            data = await fetchHost(kw, useSource, useMode, 1, PAGES_PER_BATCH,
-              ctrl ? ctrl.signal : undefined);
-          } catch (hostError) {
-            if (hostError && hostError.name === 'AbortError') throw hostError;
-            if (useSource === 'clm') throw hostError;
-            data = await fetchDirect(kw, useMode, ctrl ? ctrl.signal : undefined);
-            fallbackNote = useSource === 'animes'
-              ? 'Host 代理未就绪，改为直接查询动漫花园。'
-              : 'Host 代理未就绪，本次只查询了动漫花园，磁力猫不可用。';
-          }
-          if (seq !== reqSeq.current) return;  // 已有更新的请求，丢弃这批结果
-
-          const text = buildNotice(fallbackNote, (data.errors || []).filter(Boolean));
-          const nextPage = (data.page || 1) + (data.pages || PAGES_PER_BATCH);
-          CACHE.set(cacheKey, {
-            t: Date.now(), results: data.results || [], notice: text,
-            total: data.total == null ? null : data.total,
-            maxPage: data.maxPage == null ? null : data.maxPage,
-            nextPage,
+          await loadPage(1, {
+            kw, source: useSource, mode: useMode, sort: useSort,
+            type: useType, pageSize: usePageSize, ctx,
           });
-          setResults(data.results || []);
-          setNotice(text);
-          setClmTotal(data.total == null ? null : data.total);
-          setClmMaxPage(data.maxPage == null ? null : data.maxPage);
-          setClmNextPage(nextPage);
         } catch (e) {
-          if (seq !== reqSeq.current) return;
-          if (e && e.name === 'AbortError') {
-            if (timedOut) {
-              setResults([]);
-              setError('搜索超时，请稍后重试');
-            }
-            return;
+          // loadPage 内部已处理各类错误，这里兜底防御
+          if (e && e.name !== 'AbortError') {
+            setResults([]);
+            setError('搜索失败：' + (e && e.message ? e.message : String(e)));
+            setLoadingPage(false);
+            setLoading(false);
           }
-          setResults([]);
-          setError('搜索失败：' + (e && e.message ? e.message : String(e)));
         } finally {
           if (timer) clearTimeout(timer);
-          if (seq === reqSeq.current) setLoading(false);
         }
       };
 
-      // 「加载更多」：只追加磁力猫的下一页批次，不动已有列表；失败只写提示条。
-      const canLoadMore = (source === 'all' || source === 'clm')
-        && clmTotal != null
-        && !loading && !loadingMore
-        && (clmMaxPage == null || clmNextPage <= clmMaxPage);
+      const takeClmMeta = (data) => {
+        if (data.total != null) {
+          setClmTotal(data.total);
+          setClmMaxPage(data.maxPage == null ? null : data.maxPage);
+        }
+      };
 
-      const loadMoreClm = async () => {
-        const kw = query.trim();
-        if (!kw || !canLoadMore) return;
-        if (ctrlRef.current) {
-          try { ctrlRef.current.abort(); } catch (e) { /* 忽略 */ }
+      // 动漫花园整表：只在查询指纹变化时重新抓取，翻页直接本地切片。
+      const ensureAnimes = (kw, md, tp, st, signal, cb) => {
+        const key = ['animes', kw, tp, md, st].join('|');
+        if (poolState.fullListKey === key) { cb(poolState.fullList, [], null); return; }
+        fetchAnimes(kw, md, tp, st, signal)
+          .then((data) => {
+            let rows = data.results || [];
+            if (tp) rows = rows.filter((r) => r.type === tp);
+            poolState.fullList = sortList(dedupeRows(rows), st);
+            poolState.fullListKey = key;
+            cb(poolState.fullList, data.errors || [], data.fallbackNote || null);
+          })
+          .catch((e) => {
+            cb([], [{ source: 'animes', message: e && e.message ? e.message : String(e) }], null);
+          });
+      };
+
+      // 磁力猫按当前排序并入前 240 条（2 次窗口请求，每次 120 条，并行）
+      const ensureClmPool = (kw, md, tp, st, signal, cb) => {
+        const key = ['clmpool', kw, tp, md, st].join('|');
+        if (poolState.clmPoolKey === key) { cb(poolState.clmPool, []); return; }
+        const errs = [];
+        const parts = [];
+        let pending = 2;
+        const finish = () => {
+          pending -= 1;
+          if (pending > 0) return;
+          poolState.clmPool = dedupeRows((parts[0] || []).concat(parts[1] || []));
+          poolState.clmPoolKey = key;
+          cb(poolState.clmPool, errs);
+        };
+        [0, CLM_POOL_CHUNK].forEach((off, i) => {
+          fetchHost(kw, 'clm', md, tp, off, CLM_POOL_CHUNK, st, signal)
+            .then((data) => {
+              takeClmMeta(data);
+              (data.errors || []).forEach((e) => errs.push(e));
+              parts[i] = data.results || [];
+              finish();
+            })
+            .catch((e) => {
+              errs.push({ source: 'clm', message: e && e.message ? e.message : String(e) });
+              parts[i] = [];
+              finish();
+            });
+        });
+      };
+
+      const applyPage = (n, rows, errs, src, st, note) => {
+        setLoadingPage(false);
+        setLoading(false);
+        const list = maybeSort(dedupeRows(rows || []), src, st);
+        poolState.lastRows = list;
+        setCurPage(n);
+        setTotalPages(computeTotalPages(src, n));
+        setResults(list);
+        setError('');
+        setNotice(buildNotice(note || '', (errs || []).filter(Boolean)));
+        if (containerRef.current && containerRef.current.scrollTop > 0) {
+          try { containerRef.current.scrollTop = 0; } catch (e) { /* 忽略 */ }
         }
-        const seq = reqSeq.current + 1;
-        reqSeq.current = seq;
-        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        ctrlRef.current = ctrl;
-        setLoadingMore(true);
-        const wantPage = clmNextPage;
-        try {
-          const data = await fetchHost(kw, 'clm', mode, wantPage, PAGES_PER_BATCH,
-            ctrl ? ctrl.signal : undefined);
+      };
+
+      const failPage = (n, msg) => {
+        setLoadingPage(false);
+        setLoading(false);
+        setError('加载第 ' + n + ' 页失败：' + msg);
+      };
+
+      const currentTotal = (src) => {
+        if (src === 'clm') {
+          if (clmTotal == null) return poolState.lastRows.length;
+          return Math.min(clmTotal, CLM_MAX_TOTAL);
+        }
+        if (src === 'all') return poolState.allPool.length || poolState.fullList.length;
+        return poolState.fullList.length;
+      };
+
+      const computeTotalPages = (src, n) => {
+        const total = currentTotal(src);
+        if (!total) return Math.max(1, n);
+        return Math.max(1, Math.ceil(total / pageSize));
+      };
+
+      const loadPage = async (n, opts) => {
+        const kw = String(opts.kw == null ? query : opts.kw).trim();
+        if (!kw || loadingPage) return;
+        const src = opts.source == null ? source : opts.source;
+        const md = opts.mode == null ? mode : opts.mode;
+        const st = opts.sort == null ? sort : opts.sort;
+        const tp = opts.type == null ? type : opts.type;
+        const ps = opts.pageSize == null ? pageSize : opts.pageSize;
+        n = Math.max(1, Math.min(totalPages, parseInt(n, 10) || 1));
+        const seq = reqSeq.current;
+        const signal = ctrlRef.current ? ctrlRef.current.signal : undefined;
+        setLoadingPage(true);
+        setError('');
+        const offset = (n - 1) * ps;
+
+        // 1) 纯磁力猫：服务端窗口分页
+        if (src === 'clm') {
+          try {
+            const data = await fetchHost(kw, 'clm', md, tp, offset, ps, st, signal);
+            if (seq !== reqSeq.current) return;
+            takeClmMeta(data);
+            applyPage(n, data.results, data.errors, src, st);
+          } catch (e) {
+            if (seq !== reqSeq.current) return;
+            if (e && e.name === 'AbortError') {
+              if (opts.ctx && opts.ctx.timedOut) {
+                setResults([]);
+                setError('搜索超时，请稍后重试');
+              }
+              setLoadingPage(false);
+              setLoading(false);
+              return;
+            }
+            failPage(n, e && e.message ? e.message : String(e));
+          }
+          return;
+        }
+
+        // 2) 全部来源：动漫花园整表 + 磁力猫前 240 条并行抓取，
+        //    合并去重后按当前排序全局排序，本地分页
+        if (src === 'all') {
+          const poolKey = ['allpool', kw, tp, md, st].join('|');
+          if (poolState.allPoolKey === poolKey && poolState.allPool.length) {
+            applyPage(n, poolState.allPool.slice(offset, offset + ps), [], src, st);
+            return;
+          }
+          let pending = 2;
+          let oRows = [];
+          let cRows = [];
+          const errs = [];
+          let gotCount = 0;
+          let fallbackNote = '';
+          const finish = () => {
+            pending -= 1;
+            if (pending > 0) {
+              setPoolProgress('已收到 ' + gotCount + ' 条（等待 ' + pending + ' 组来源）');
+              return;
+            }
+            setPoolProgress('');
+            if (seq !== reqSeq.current) return;
+            if (!oRows.length && !cRows.length && opts.ctx && opts.ctx.timedOut) {
+              setLoadingPage(false);
+              setLoading(false);
+              setError('搜索超时，请稍后重试');
+              return;
+            }
+            poolState.allPool = sortList(dedupeRows(oRows.concat(cRows)), st);
+            poolState.allPoolKey = poolKey;
+            applyPage(n, poolState.allPool.slice(offset, offset + ps), errs, src, st, fallbackNote);
+          };
+          ensureAnimes(kw, md, tp, st, signal, (rows, e, note) => {
+            oRows = rows;
+            gotCount += rows.length;
+            if (note) fallbackNote = note;
+            (e || []).forEach((x) => errs.push(x));
+            finish();
+          });
+          ensureClmPool(kw, md, tp, st, signal, (rows, e) => {
+            cRows = rows;
+            gotCount += rows.length;
+            (e || []).forEach((x) => errs.push(x));
+            finish();
+          });
+          return;
+        }
+
+        // 3) 动漫花园单源：整表取一次，之后本地分页
+        const key = [src, kw, tp, md, st].join('|');
+        if (poolState.fullListKey === key && poolState.fullList.length) {
+          applyPage(n, poolState.fullList.slice(offset, offset + ps), [], src, st);
+          return;
+        }
+        ensureAnimes(kw, md, tp, st, signal, (rows, e, note) => {
           if (seq !== reqSeq.current) return;
-          if (data.total != null) {
-            setClmTotal(data.total);
-            setClmMaxPage(data.maxPage == null ? null : data.maxPage);
+          if (opts.ctx && opts.ctx.timedOut && !rows.length && (e || []).length) {
+            setLoadingPage(false);
+            setLoading(false);
+            setError('搜索超时，请稍后重试');
+            return;
           }
-          setClmNextPage((data.page || wantPage) + (data.pages || PAGES_PER_BATCH));
-          setResults((prev) => dedupeRows(prev.concat(data.results || [])));
-          if (data.errors && data.errors.length) setNotice(buildNotice('', data.errors));
-        } catch (e) {
-          if (seq === reqSeq.current && e && e.name !== 'AbortError') {
-            setNotice('加载更多失败：' + (e && e.message ? e.message : String(e)));
-          }
-        } finally {
-          if (seq === reqSeq.current) setLoadingMore(false);
-        }
+          applyPage(n, rows.slice(offset, offset + ps), e, src, st, note);
+        });
       };
 
       const goHome = () => {
@@ -377,6 +578,8 @@ window.__ModuleLoader__.load({
         setNotice('');
         setHasSearched(false);
         setLoading(false);
+        setLoadingPage(false);
+        setPoolProgress('');
         setType('all');
         setSource('all');
         setSort('date');
@@ -384,31 +587,121 @@ window.__ModuleLoader__.load({
         setTab('search');
         setClmTotal(null);
         setClmMaxPage(null);
-        setClmNextPage(1);
-        setLoadingMore(false);
+        setCurPage(1);
+        setTotalPages(1);
+        poolState.fullList = [];
+        poolState.fullListKey = '';
+        poolState.clmPool = [];
+        poolState.clmPoolKey = '';
+        poolState.allPool = [];
+        poolState.allPoolKey = '';
+        poolState.lastRows = [];
       };
 
-      // 过滤 + 排序
-      const shown = results
-        .filter((r) => type === 'all' || r.type === type)
-        .slice()
-        .sort((a, b) => {
-          if (sort === 'size') return (Number(b.size) || 0) - (Number(a.size) || 0);
-          if (sort === 'name') return String(a.title || '').localeCompare(String(b.title || ''));
-          return timeOf(b.createdAt) - timeOf(a.createdAt);
-        });
+      // 统计行：总数、当前区间、页码；「全部」来源额外说明结果池组成
+      const shownTotal = source === 'clm'
+        ? (clmTotal == null ? poolState.lastRows.length : Math.min(clmTotal, CLM_MAX_TOTAL))
+        : (source === 'all'
+          ? (poolState.allPool.length || poolState.fullList.length)
+          : poolState.fullList.length);
+      const from = results.length ? (curPage - 1) * pageSize + 1 : 0;
+      const to = from ? from + results.length - 1 : 0;
+      let statsText = '共 ' + shownTotal + ' 条 · 第 ' + from + '–' + to + ' 条 · 第 '
+        + curPage + '/' + totalPages + ' 页';
+      if (source === 'all') {
+        const othersCount = poolState.allPool.filter((r) => r.source !== 'clm').length;
+        const clmCount = poolState.allPool.length - othersCount;
+        statsText += '（其它来源 ' + othersCount + ' 条 + 磁力猫并入 ' + clmCount + ' 条';
+        if (clmTotal != null) {
+          statsText += '，磁力猫共匹配 ' + clmTotal + ' 条（站点最多 '
+            + (clmMaxPage || CLM_MAX_PAGE) + ' 页 / 约 ' + CLM_MAX_TOTAL + ' 条）';
+        }
+        statsText += '）';
+      } else if (source === 'clm' && clmTotal != null) {
+        statsText += '（磁力猫匹配 ' + clmTotal + ' 条，站点最多 '
+          + (clmMaxPage || CLM_MAX_PAGE) + ' 页 / 约 ' + CLM_MAX_TOTAL + ' 条）';
+      }
+      if (source === 'clm' && sort === 'name') {
+        statsText += ' · 该排序仅对当前页生效';
+      }
 
-      // 磁力猫统计行：站点总数与已显示条数（其它来源没有这两个字段就只显示总数）
-      const clmShown = results.filter((r) => r.source === 'clm').length;
-      const clmCap = clmTotal != null
-        ? Math.min(clmTotal, (clmMaxPage == null ? 80 : clmMaxPage) * PAGE_SIZE)
-        : null;
-      const statsText = '共 ' + results.length + ' 条，当前筛选 ' + shown.length + ' 条'
-        + (clmTotal != null
-          ? '；磁力猫匹配 ' + clmTotal + ' 条'
-            + (clmCap != null ? '（站点最多可翻 ' + clmMaxPage + ' 页 / 约 ' + clmCap + ' 条）' : '')
-            + '，已显示 ' + clmShown + ' 条'
-          : '');
+      // 页码按钮：首页/末页 + 当前页 ±2 + 省略号；跳页输入框回车生效
+      const pageButtons = () => {
+        const nums = [];
+        const push = (v) => { if (nums[nums.length - 1] !== v) nums.push(v); };
+        push(1);
+        for (let p = curPage - 2; p <= curPage + 2; p += 1) {
+          if (p > 1 && p < totalPages) push(p);
+        }
+        if (totalPages > 1) push(totalPages);
+        const buttons = [];
+        for (let i = 0; i < nums.length; i += 1) {
+          if (i > 0 && nums[i] - nums[i - 1] > 1) {
+            buttons.push(h('span', {
+              key: 'gap-' + i,
+              style: { color: C.muted, fontSize: 13, padding: '0 2px' }
+            }, '…'));
+          }
+          const cur = nums[i] === curPage;
+          buttons.push(h('button', {
+            key: 'pg-' + nums[i],
+            onClick: () => loadPage(nums[i], {}),
+            disabled: loadingPage,
+            style: {
+              minWidth: 32, padding: '6px 10px', borderRadius: 8, fontSize: 13,
+              cursor: loadingPage ? 'default' : 'pointer',
+              border: '1px solid ' + (cur ? C.brand : C.borderStrong),
+              background: cur ? C.brand : C.layer,
+              color: cur ? '#fff' : C.text,
+              opacity: loadingPage ? 0.45 : 1
+            }
+          }, String(nums[i])));
+        }
+        return buttons;
+      };
+
+      const onJumpKey = (e) => {
+        if (e.key !== 'Enter') return;
+        const n = parseInt(e.target.value, 10);
+        if (n >= 1) loadPage(n, {});
+      };
+
+      const pager = () => {
+        if (!hasSearched || totalPages <= 1) return null;
+        const btn = (label, page, disabled) => h('button', {
+          onClick: () => loadPage(page, {}),
+          disabled: !!disabled,
+          style: {
+            padding: '6px 10px', borderRadius: 8, fontSize: 13,
+            cursor: disabled || loadingPage ? 'default' : 'pointer',
+            border: '1px solid ' + C.borderStrong, background: C.layer, color: C.text,
+            opacity: (disabled || loadingPage) ? 0.45 : 1
+          }
+        }, label);
+        return h('div', {
+          style: {
+            display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
+            justifyContent: 'center', margin: '18px 0 6px'
+          }
+        },
+          btn('« 上一页', curPage - 1, curPage <= 1 || loadingPage),
+          pageButtons(),
+          btn('下一页 »', curPage + 1, curPage >= totalPages || loadingPage),
+          h('span', { style: { fontSize: 12, color: C.muted, marginLeft: 8 } },
+            '跳至 ',
+            h('input', {
+              onKeyDown: onJumpKey,
+              type: 'number', min: 1, max: totalPages,
+              placeholder: String(curPage),
+              style: {
+                width: 56, padding: '5px 8px', border: '1px solid ' + C.borderStrong,
+                borderRadius: 8, fontSize: 12, textAlign: 'center',
+                background: C.layer, color: C.text
+              }
+            }),
+            ' 页')
+        );
+      };
 
       const chip = (label, active, onClick, disabled, title) => h('button', {
         onClick,
@@ -473,7 +766,7 @@ window.__ModuleLoader__.load({
           '收藏：' + favorites.length + ' 个（切换到「收藏」查看）')
       );
 
-      return h('div', { style: { padding: 16, height: '100%', overflow: 'auto', color: C.text } },
+      return h('div', { ref: containerRef, style: { padding: 16, height: '100%', overflow: 'auto', color: C.text } },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 } },
           h('h2', { style: { margin: 0, fontSize: 18, color: C.text } }, 'BT资源搜索'),
           h('button', {
@@ -521,7 +814,7 @@ window.__ModuleLoader__.load({
             }, '搜索')
           ),
 
-          h('div', { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, '改「来源 / 搜索方式」会重新搜索，改「类型 / 排序」只筛当前结果'),
+          h('div', { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, '改「来源 / 类型 / 排序 / 搜索方式 / 每页条数」会重新搜索'),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 } },
             h('span', { style: { fontSize: 12, color: C.muted } }, '来源：'),
             SOURCES.map(([v, label]) =>
@@ -534,14 +827,20 @@ window.__ModuleLoader__.load({
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 } },
             h('span', { style: { fontSize: 12, color: C.muted } }, '类型：'),
             [['all', '全部']].concat(TYPES.map((t) => [t, t])).map(([v, label]) =>
-              chip(label, type === v, () => setType(v))
+              chip(label, type === v, () => {
+                setType(v);
+                if (hasSearched || query.trim()) runSearch(undefined, { type: v });
+              })
             ),
             h('span', { style: { fontSize: 11, color: C.idle } }, '（磁力猫的类型按标题推断，可能不全）')
           ),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 } },
             h('span', { style: { fontSize: 12, color: C.muted } }, '排序：'),
-            [['date', '时间'], ['size', '大小'], ['name', '名称']].map(([v, label]) =>
-              chip(label, sort === v, () => setSort(v))
+            SORT_OPTIONS.map(([v, label]) =>
+              chip(label, sort === v, () => {
+                setSort(v);
+                if (hasSearched || query.trim()) runSearch(undefined, { sort: v });
+              })
             )
           ),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 12 } },
@@ -553,7 +852,26 @@ window.__ModuleLoader__.load({
             chip('精准', mode === 'precise', () => {
               setMode('precise');
               if (hasSearched || query.trim()) runSearch(undefined, { mode: 'precise' });
-            }, loading, '标题必须同时包含全部关键词')
+            }, loading, '标题必须同时包含全部关键词'),
+            h('span', { style: { fontSize: 12, color: C.muted, marginLeft: 8 } }, '每页：'),
+            h('select', {
+              value: String(pageSize),
+              onChange: (e) => {
+                const v = parseInt(e.target.value, 10);
+                if (PAGE_SIZES.indexOf(v) < 0) return;
+                setPageSize(v);
+                savePageSize(v);
+                if (hasSearched || query.trim()) runSearch(undefined, { pageSize: v });
+              },
+              style: {
+                padding: '5px 8px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                border: '1px solid ' + C.borderStrong, background: C.layer, color: C.text
+              }
+            },
+              PAGE_SIZES.map((n) => h('option', { key: n, value: String(n) }, n + ' 条'))
+            ),
+            h('span', { style: { fontSize: 11, color: C.muted } },
+              hasSearched ? ('第 ' + curPage + '/' + totalPages + ' 页') : '')
           ),
 
           notice && h('div', {
@@ -564,7 +882,10 @@ window.__ModuleLoader__.load({
             style: { marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: C.layer2, border: '1px solid ' + C.err, color: C.err, fontSize: 12 }
           }, error),
 
-          loading && h('div', { style: { textAlign: 'center', padding: 20, color: C.muted } }, '搜索中…'),
+          loading && !poolProgress && h('div', { style: { textAlign: 'center', padding: 20, color: C.muted } }, '搜索中…'),
+
+          poolProgress && h('div', { style: { textAlign: 'center', padding: 20, color: C.muted } },
+            '搜索中…' + poolProgress),
 
           !loading && !error && !hasSearched && homePanel,
 
@@ -574,21 +895,8 @@ window.__ModuleLoader__.load({
 
           !loading && results.length > 0 && h('div', {},
             h('div', { style: { fontSize: 12, color: C.muted, marginBottom: 8 } }, statsText),
-            shown.map((r, i) => card(r, (r.id || 'idx') + '-' + i)),
-            shown.length === 0 && h('div', { style: { textAlign: 'center', padding: 20, color: C.muted } }, '当前类型筛选下没有结果，可切回「全部」。'),
-            canLoadMore && h('div', { style: { textAlign: 'center', padding: '10px 0 4px' } },
-              h('button', {
-                onClick: loadMoreClm,
-                disabled: loadingMore,
-                style: {
-                  padding: '8px 18px', borderRadius: 8, fontSize: 13,
-                  border: '1px solid ' + C.borderStrong, background: C.layer, color: C.text,
-                  cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.6 : 1
-                }
-              }, loadingMore
-                ? '加载中…'
-                : '加载更多（磁力猫 +' + (PAGES_PER_BATCH * PAGE_SIZE) + ' 条）')
-            )
+            results.map((r, i) => card(r, (r.id || 'idx') + '-' + i)),
+            pager()
           )
         ),
 

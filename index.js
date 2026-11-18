@@ -7,10 +7,14 @@
 import { searchAll } from './sources.js';
 
 const ROUTE = '/plugins/dsh-plugin-bt-search/search';
-// 磁力猫实测最多 80 页、12 条/页；首屏默认取 5 页（60 条），可继续加载。
+// 磁力猫实测最多 80 页、12 条/页。新接口 offset/limit（条数窗口）默认每页 20 条、
+// 单次最多 120 条；旧接口 page/pages（1 基站点页）保留向后兼容。
 const MAX_PAGE = 80;
 const DEFAULT_PAGES = 5;
 const MAX_PAGES_PER_REQUEST = 10;
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 120;
+const SORTS = ['date', 'size', 'name'];
 
 function sendJson(response, status, payload) {
   const body = Buffer.from(JSON.stringify(payload), 'utf8');
@@ -46,14 +50,28 @@ async function handleSearch(ctx, request, response) {
     return;
   }
   const params = url.searchParams;
-  const rawPage = Number.parseInt(params.get('page') || '1', 10);
-  const page = Math.min(MAX_PAGE, Math.max(1, Number.isFinite(rawPage) ? rawPage : 1));
-  const rawPages = Number.parseInt(params.get('pages') || String(DEFAULT_PAGES), 10);
-  const pages = Math.min(
-    MAX_PAGES_PER_REQUEST,
-    Math.max(1, Number.isFinite(rawPages) ? rawPages : DEFAULT_PAGES),
-  );
   const mode = params.get('mode') === 'precise' ? 'precise' : 'broad';
+  const sortRaw = params.get('sort') || 'date';
+  const sort = SORTS.includes(sortRaw) ? sortRaw : 'date';
+  // 新调用方传 offset/limit（条数窗口）；两者都缺省且带 page/pages 时走旧语义。
+  const queryArgs = { offset: undefined, limit: undefined, page: undefined, pages: undefined };
+  if (params.has('offset') || params.has('limit')) {
+    const rawOffset = Number.parseInt(params.get('offset') || '0', 10);
+    queryArgs.offset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
+    const rawLimit = Number.parseInt(params.get('limit') || String(DEFAULT_LIMIT), 10);
+    queryArgs.limit = Math.min(
+      MAX_LIMIT,
+      Math.max(1, Number.isFinite(rawLimit) ? rawLimit : DEFAULT_LIMIT),
+    );
+  } else {
+    const rawPage = Number.parseInt(params.get('page') || '1', 10);
+    queryArgs.page = Math.min(MAX_PAGE, Math.max(1, Number.isFinite(rawPage) ? rawPage : 1));
+    const rawPages = Number.parseInt(params.get('pages') || String(DEFAULT_PAGES), 10);
+    queryArgs.pages = Math.min(
+      MAX_PAGES_PER_REQUEST,
+      Math.max(1, Number.isFinite(rawPages) ? rawPages : DEFAULT_PAGES),
+    );
+  }
 
   try {
     const payload = await searchAll({
@@ -61,8 +79,8 @@ async function handleSearch(ctx, request, response) {
       source: params.get('source') || 'all',
       type: params.get('type') || '',
       mode,
-      page,
-      pages,
+      sort,
+      ...queryArgs,
     });
     sendJson(response, 200, payload);
   } catch (error) {

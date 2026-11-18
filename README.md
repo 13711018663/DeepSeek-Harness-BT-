@@ -12,8 +12,8 @@ A BT / magnet resource search panel in the DeepSeek Harness sidebar. It aggregat
 - **Type filter** (anime / manga / music / TV drama / RAW / batch / tokusatsu / game), sorting by publish time, size or name.
 - **Result cards** with type, formatted size, publish date, file count, file format, source site and publisher, and "magnet link", "copy magnet" and "detail page" actions.
 - **History and favorites**: the last 20 searches are kept and can be cleared; favorites are de-duplicated by title and stored in the browser.
-- **Multi-page results**: 磁力猫 pages its index at 12 items per page. The panel fetches 5 pages (60 results) up front and offers *load more* up to the site's 80-page ceiling (~960 results); the site's own match count is shown above the list.
-- In-memory response cache with a 60 s TTL and an 18 s request timeout.
+- **Pagination**: selectable page size (10 / 20 / 50 / 100, default 20, remembered) with a web-style pager below the list (previous / next / page numbers / jump-to-page). The "all" source fetches every source in parallel and merges the top 240 磁力猫 results into one globally sorted list, so each page mixes sources; the site's own match count and its 80-page (~960) ceiling are shown above the list.
+- In-memory response cache with a 60 s TTL and a 25 s request timeout.
 
 ## How the data is fetched
 
@@ -69,8 +69,8 @@ MIT — see [LICENSE](LICENSE).
 - 类型筛选（动画 / 漫画 / 音乐 / 日剧 / RAW / 合集 / 特摄 / 游戏），按发布时间、大小、名称排序。
 - 结果卡片展示类型、大小、发布时间、文件数、文件格式、来源站点与发布者，并提供磁力链接、复制磁力、详情页。
 - 搜索历史（保留 20 条，可清空）与收藏（按标题去重），保存在浏览器 `localStorage`。
-- **多页结果**：磁力猫按每页 12 条分页，面板首屏并行取 5 页（60 条），并提供「加载更多」继续追加，直到站点上限 80 页（约 960 条）；结果上方显示站点给出的匹配总数。
-- 60 秒内存缓存与 18 秒请求超时。
+- **分页**：每页条数可选（10 / 20 / 50 / 100，默认 20，记忆上次选择），结果下方为网页式翻页（上一页 / 下一页 / 页码 / 跳页）；「全部」来源并行抓取各来源并把磁力猫前 240 条并入同一个列表全局排序，每页天然混合各来源，结果上方显示站点匹配总数与 80 页（约 960 条）上限。
+- 60 秒内存缓存与 25 秒请求超时。
 
 ### 数据怎么来的
 

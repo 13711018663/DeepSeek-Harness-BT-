@@ -11,6 +11,7 @@ A BT / magnet resource search panel in the DeepSeek Harness sidebar. It aggregat
 - **Broad / precise matching**: broad returns a resource when any word matches; precise requires every word to appear in the title.
 - **Type filter**: all / anime / manga / music / TV drama / RAW / batch / tokusatsu / game.
 - **Sorting**: publish time, file size, name.
+- **Pagination**: page size is selectable (10 / 20 / 50 / 100, default 20, remembered) with a web-style pager below the list (previous / next / page numbers / jump-to-page); the "all" source fetches every source in parallel and merges the top 240 磁力猫 results into one globally sorted list, so every page mixes sources naturally.
 - **Result cards**: type, formatted size, publish date, file count, file format, source site and publisher, with "magnet link", "copy magnet" and "detail page" actions.
 - **History and favorites**: the last 20 searches are kept and can be cleared; favorites are de-duplicated by title and stored in the browser.
 - **Back home**: clears the keyword and every filter and returns to the recent-search entry.
@@ -21,7 +22,7 @@ The browser cannot call 磁力猫 directly because the site sends no CORS header
 
 ## Limitations
 
-- 磁力猫 pages its index at 12 items per page and caps a search at 80 pages (~960 results); the panel fetches 5 pages (60) up front and loads more on demand, so after a type filter only a few may remain.
+- 磁力猫 pages its index at 12 items per page and caps a search at 80 pages (~960 results); the API fetches offset/limit windows (up to 120 items per request, the first page serially past the click gate and the rest 4-way parallel). The single-source view can page through all 960; the "all" source merges the top 240 for speed, and the stats line says so.
 - 磁力猫 is a Chinese index, so a pure English keyword often finds nothing.
 - 磁力猫 matches all words (AND), so broad mode sends only the longest word — different from Anime Garden's OR behaviour.
 - The Host half needs one DSH restart after an update; until then the panel falls back to Anime Garden directly and says so.
